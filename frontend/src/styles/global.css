@@ -184,6 +184,8 @@ nav button.active {
 .form-panel {
   display: grid;
   gap: 14px;
+  align-content: start;
+  align-self: start;
 }
 
 .form-title,
@@ -334,6 +336,7 @@ td {
 
 .archive-layout {
   grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  align-items: start;
 }
 
 .dept-position-layout {
