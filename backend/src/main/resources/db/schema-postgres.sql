@@ -38,6 +38,20 @@ CREATE TABLE IF NOT EXISTS employee (
 CREATE INDEX IF NOT EXISTS idx_employee_department ON employee(department_id);
 CREATE INDEX IF NOT EXISTS idx_employee_no ON employee(employee_no);
 CREATE INDEX IF NOT EXISTS idx_employee_status ON employee(status);
+
+CREATE TABLE IF NOT EXISTS supervisor_data_scope (
+  id VARCHAR(40) PRIMARY KEY,
+  supervisor_id VARCHAR(40) NOT NULL,
+  department_id VARCHAR(40) NOT NULL,
+  position_id VARCHAR(40),
+  all_positions BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_supervisor_scope_supervisor ON supervisor_data_scope(supervisor_id);
+CREATE INDEX IF NOT EXISTS idx_supervisor_scope_department ON supervisor_data_scope(department_id);
+CREATE INDEX IF NOT EXISTS idx_supervisor_scope_position ON supervisor_data_scope(position_id);
+
 UPDATE position_table p
 SET department_id = (
   SELECT e.department_id FROM employee e WHERE e.position_id = p.id LIMIT 1

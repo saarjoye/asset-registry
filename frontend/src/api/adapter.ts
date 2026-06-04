@@ -1,4 +1,4 @@
-import { api, type DeviceAsset, type PhoneNumber as PhoneBackend, type ChannelAccount as AccountBackend, type Employee as EmployeeBackend, type Department, type Position, type HandoverTask, type HandoverTargetType, type HandoverStatus, type DeviceStatus, type EmployeeStatus, type Role } from "./client";
+import { api, clearAuthToken, saveAuthToken, type DeviceAsset, type PhoneNumber as PhoneBackend, type ChannelAccount as AccountBackend, type Employee as EmployeeBackend, type Department, type Position, type HandoverTask, type HandoverTargetType, type HandoverStatus, type DeviceStatus, type EmployeeStatus, type Role } from "./client";
 
 export type {
   Department,
@@ -12,6 +12,7 @@ export type {
 };
 
 export type { DeviceSummaryRow, AccountSummaryRow, SummaryRows, ImportResult } from "./client";
+export type { SupervisorDataScope, SupervisorDataScopeInput } from "./client";
 
 export interface Employee {
   id: string;
@@ -131,4 +132,4 @@ export function adaptAccount(a: AccountBackend): ChannelAccount {
   };
 }
 
-export { api };
+export { api, clearAuthToken, saveAuthToken };

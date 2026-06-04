@@ -7,8 +7,10 @@ import com.company.asset.entity.Employee;
 import com.company.asset.entity.HandoverTask;
 import com.company.asset.entity.PhoneNumber;
 import com.company.asset.entity.Position;
+import com.company.asset.entity.SupervisorDataScope;
 import com.company.asset.service.SummaryRows;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 import java.time.LocalDate;
 import java.util.List;
@@ -19,21 +21,35 @@ public interface RegistryService {
 
   Employee initializeAdmin(SetupRequest request);
 
+  boolean setupRequired();
+
   Optional<Employee> login(LoginRequest request);
+
+  Employee employee(String employeeId);
 
   List<Department> departments();
 
   List<Position> positions();
 
-  List<Employee> employees();
+  List<Employee> employees(String viewerId);
 
-  List<PhoneNumber> phones();
+  List<PhoneNumber> phones(String viewerId);
 
-  List<DeviceAsset> devices();
+  List<DeviceAsset> devices(String viewerId);
 
-  List<ChannelAccount> accounts();
+  List<ChannelAccount> accounts(String viewerId);
 
-  List<HandoverTask> handoverTasks();
+  List<HandoverTask> handoverTasks(String viewerId);
+
+  List<SupervisorDataScope> supervisorDataScopesForAdmin(String operatorId);
+
+  List<SupervisorDataScope> supervisorDataScopes(String supervisorId);
+
+  List<SupervisorDataScope> saveSupervisorDataScopes(
+      String operatorId,
+      String supervisorId,
+      SupervisorDataScopeRequest request
+  );
 
   DeviceAsset registerDevice(String employeeId, DeviceRequest request);
 
@@ -113,7 +129,7 @@ public interface RegistryService {
       @PositiveOrZero Integer age,
       @NotBlank String departmentId,
       @NotBlank String positionId,
-      @NotBlank LocalDate hireDate,
+      @NotNull LocalDate hireDate,
       @NotBlank String status,
       String account,
       String password,
@@ -166,6 +182,16 @@ public interface RegistryService {
   record HandoverRejectRequest(
       @NotBlank String taskId,
       @NotBlank String rejectReason
+  ) {
+  }
+
+  record SupervisorDataScopeRequest(List<SupervisorDataScopeItem> scopes) {
+  }
+
+  record SupervisorDataScopeItem(
+      @NotBlank String departmentId,
+      Boolean allPositions,
+      List<String> positionIds
   ) {
   }
 }

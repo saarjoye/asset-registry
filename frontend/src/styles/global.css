@@ -374,6 +374,27 @@ td {
   flex-wrap: wrap;
 }
 
+.checkbox-row input[type="checkbox"] {
+  width: 16px;
+  min-height: 16px;
+  flex: 0 0 auto;
+}
+
+.form-subsection {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background: #fbf8ff;
+  border: 1px solid #eadfff;
+  border-radius: 8px;
+}
+
+.permission-position-box {
+  display: grid;
+  gap: 8px;
+  padding-left: 26px;
+}
+
 .check-item {
   width: auto;
   min-height: 34px;

@@ -1,4 +1,5 @@
 const API_BASE = "/api";
+const AUTH_TOKEN_KEY = "work-device-registry-token";
 
 class HttpError extends Error {
   status: number;
@@ -12,14 +13,17 @@ class HttpError extends Error {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const isFormData = init.body instanceof FormData;
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const headers = new Headers(init.headers);
+  if (!isFormData && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: isFormData
-      ? init.headers
-      : {
-          "Content-Type": "application/json",
-          ...(init.headers ?? {})
-        }
+    headers
   });
   const text = await res.text();
   let parsed: unknown = text;
@@ -36,7 +40,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 async function requestBlob(path: string): Promise<Blob> {
-  const res = await fetch(`${API_BASE}${path}`);
+  const token = localStorage.getItem(AUTH_TOKEN_KEY);
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
   if (!res.ok) {
     const text = await res.text();
     throw new HttpError(res.status, text, text || `HTTP ${res.status}`);
@@ -52,6 +59,20 @@ export type HandoverTargetType = "本部门员工" | "其它部门员工" | "回
 
 export interface Department { id: string; name: string; }
 export interface Position { id: string; departmentId: string; name: string; }
+export interface SupervisorDataScope {
+  id: string;
+  supervisorId: string;
+  departmentId: string;
+  positionId: string | null;
+  allPositions: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface SupervisorDataScopeInput {
+  departmentId: string;
+  allPositions: boolean;
+  positionIds: string[];
+}
 export interface ImportResult {
   totalRows: number;
   successRows: number;
@@ -153,14 +174,26 @@ export interface AccountSummaryRow {
   idCardNumber: string;
 }
 export interface SummaryRows { devices: DeviceSummaryRow[]; accounts: AccountSummaryRow[]; }
+export interface LoginResponse { user: Employee; token: string; }
+
+export function saveAuthToken(token: string) {
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
+}
+
+export function clearAuthToken() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+}
 
 export const api = {
   auth: {
+    setupRequired() {
+      return request<{ required: boolean }>("/auth/setup-required");
+    },
     setup(payload: { name: string; account: string; password: string; departmentName: string; positionName: string; }) {
-      return request<{ user: Employee }>("/auth/setup", { method: "POST", body: JSON.stringify(payload) });
+      return request<LoginResponse>("/auth/setup", { method: "POST", body: JSON.stringify(payload) });
     },
     login(payload: { account: string; password: string; }) {
-      return request<{ user: Employee }>("/auth/login", { method: "POST", body: JSON.stringify(payload) });
+      return request<LoginResponse>("/auth/login", { method: "POST", body: JSON.stringify(payload) });
     }
   },
   archive: {
@@ -198,6 +231,18 @@ export const api = {
     accounts: () => request<ChannelAccount[]>("/archive/accounts"),
     openAccount(payload: { employeeId: string; account: string; password: string; role: Role }) {
       return request<Employee>("/archive/accounts/open", { method: "POST", body: JSON.stringify(payload) });
+    }
+  },
+  permissions: {
+    supervisorScopes: () => request<SupervisorDataScope[]>("/permissions/supervisors/scopes"),
+    supervisorScope(supervisorId: string) {
+      return request<SupervisorDataScope[]>(`/permissions/supervisors/${supervisorId}/scopes`);
+    },
+    saveSupervisorScope(supervisorId: string, scopes: SupervisorDataScopeInput[]) {
+      return request<SupervisorDataScope[]>(`/permissions/supervisors/${supervisorId}/scopes`, {
+        method: "POST",
+        body: JSON.stringify({ scopes })
+      });
     }
   },
   registry: {

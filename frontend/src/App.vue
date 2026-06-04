@@ -6,6 +6,8 @@ import {
   adaptEmployee,
   adaptPhone,
   adaptAccount,
+  clearAuthToken,
+  saveAuthToken,
   type Department,
   type Position,
   type Employee,
@@ -18,7 +20,9 @@ import {
   type DeviceStatus,
   type HandoverStatus,
   type HandoverTargetType,
-  type ImportResult
+  type ImportResult,
+  type SupervisorDataScope,
+  type SupervisorDataScopeInput
 } from "./api/adapter";
 
 type RealNameStatus = "已实名" | "未实名";
@@ -38,6 +42,7 @@ interface AppState {
   devices: Device[];
   accounts: ChannelAccount[];
   handoverTasks: HandoverTask[];
+  supervisorScopes: SupervisorDataScope[];
 }
 
 const SESSION_KEY = "work-device-registry-user";
@@ -81,6 +86,7 @@ const menuMap: Record<Role, MenuItem[]> = {
     { key: "account", label: "登记账号" },
     { key: "peopleAdmin", label: "人员档案" },
     { key: "deptPosition", label: "部门岗位档案" },
+    { key: "dataPermission", label: "数据权限" },
     { key: "archiveImport", label: "批量导入" },
     { key: "allSummary", label: "所有汇总" },
     { key: "deviceAllocation", label: "资产分配" },
@@ -98,12 +104,13 @@ const filterFields: Array<{ key: FilterKey; label: string }> = [
 ];
 
 function emptyState(): AppState {
-  return { departments: [], positions: [], employees: [], phones: [], devices: [], accounts: [], handoverTasks: [] };
+  return { departments: [], positions: [], employees: [], phones: [], devices: [], accounts: [], handoverTasks: [], supervisorScopes: [] };
 }
 
 const state = reactive<AppState>(emptyState());
 const dataLoaded = ref(false);
 const dataError = ref("");
+const needsInitialSetup = ref(false);
 const currentUserId = ref(localStorage.getItem(SESSION_KEY) ?? "");
 const activePage = ref("");
 const loginForm = reactive({ account: "", password: "" });
@@ -184,9 +191,17 @@ const allocationForm = reactive({ assetType: "设备" as AssetType, assetId: "",
 const returnReasons = reactive<Record<string, string>>({});
 const transferForm = reactive({ deviceId: "", employeeId: "" });
 const stockForm = reactive({ deviceId: "" });
+const dataPermissionForm = reactive({
+  supervisorId: "",
+  departmentIds: [] as string[],
+  allPositionDepartments: [] as string[],
+  positionIdsByDepartment: {} as Record<string, string[]>
+});
+const dataPermissionMessage = ref("");
 
-async function refresh() {
+async function refresh(viewerId = currentUserId.value) {
   try {
+    const normalizedViewerId = viewerId || undefined;
     const [employees, departments, positions, devices, accounts, phones, handoverTasks] = await Promise.all([
       api.archive.employees(),
       api.archive.departments(),
@@ -196,6 +211,8 @@ async function refresh() {
       api.archive.phones(),
       api.handover.tasks()
     ]);
+    const viewer = normalizedViewerId ? employees.find((employee) => employee.id === normalizedViewerId) : null;
+    const supervisorScopes = viewer?.roleCode === "admin" ? await api.permissions.supervisorScopes() : [];
     state.employees = employees.map(adaptEmployee);
     state.departments = departments;
     state.positions = positions;
@@ -203,6 +220,7 @@ async function refresh() {
     state.accounts = accounts.map(adaptAccount);
     state.phones = phones.map(adaptPhone);
     state.handoverTasks = handoverTasks;
+    state.supervisorScopes = supervisorScopes;
     dataError.value = "";
   } catch (e) {
     dataError.value = e instanceof Error ? e.message : String(e);
@@ -243,22 +261,25 @@ async function refreshScopedSummary(scope: "mine" | "department" | "all") {
 }
 
 onMounted(async () => {
-  await refresh();
+  const setupStatus = await api.auth.setupRequired();
+  needsInitialSetup.value = setupStatus.required;
   if (currentUserId.value) {
+    await refresh(currentUserId.value);
     const u = state.employees.find(e => e.id === currentUserId.value);
     if (u) {
       activePage.value = menuMap[u.role][0].key;
     } else {
       currentUserId.value = "";
+      clearAuthToken();
     }
+  } else {
+    dataLoaded.value = true;
   }
 });
 
 const currentUser = computed(() => {
   return state.employees.find((employee) => employee.id === currentUserId.value) ?? null;
 });
-
-const needsInitialSetup = computed(() => state.employees.length === 0);
 
 const currentMenu = computed(() => {
   if (!currentUser.value) {
@@ -524,6 +545,21 @@ const allocationReceiverEmployees = computed(() => {
   });
 });
 
+const supervisorEmployees = computed(() => {
+  return state.employees.filter((employee) => employee.role === "supervisor");
+});
+
+const selectedDataPermissionSupervisor = computed(() => {
+  return supervisorEmployees.value.find((employee) => employee.id === dataPermissionForm.supervisorId) ?? null;
+});
+
+const supervisorScopesForSelected = computed(() => {
+  if (!dataPermissionForm.supervisorId) {
+    return [];
+  }
+  return state.supervisorScopes.filter((scope) => scope.supervisorId === dataPermissionForm.supervisorId);
+});
+
 const summaryScopeEmployees = computed(() => {
   if (!currentUser.value) {
     return [];
@@ -534,7 +570,7 @@ const summaryScopeEmployees = computed(() => {
   }
 
   if (activePage.value === "deptSummary") {
-    return state.employees.filter((employee) => employee.departmentId === currentUser.value?.departmentId);
+    return state.employees;
   }
 
   return state.employees.filter((employee) => employee.id === currentUser.value?.id);
@@ -546,7 +582,7 @@ const summaryDeviceRows = computed(() => {
   let rows = state.devices
     .filter((device) => {
       if (activePage.value === "deptSummary") {
-        return device.departmentId === currentUser.value?.departmentId;
+        return true;
       }
 
       if (activePage.value === "allSummary") {
@@ -592,8 +628,7 @@ const summaryAccountRows = computed(() => {
   let rows = state.accounts
     .filter((account) => {
       if (activePage.value === "deptSummary") {
-        const owner = getEmployee(account.employeeId);
-        return owner?.departmentId === currentUser.value?.departmentId;
+        return true;
       }
 
       if (activePage.value === "allSummary") {
@@ -911,13 +946,143 @@ function employeeDisplay(employee: Employee) {
   return `${employee.name} / ${employee.employeeNo} / ${getDepartmentName(employee.departmentId)} / ${getPositionName(employee.positionId)}`;
 }
 
+function eventChecked(event: Event) {
+  return (event.target as HTMLInputElement).checked;
+}
+
+function positionsByDepartment(departmentId: string) {
+  return state.positions.filter((position) => position.departmentId === departmentId);
+}
+
+function isPermissionDepartmentSelected(departmentId: string) {
+  return dataPermissionForm.departmentIds.includes(departmentId);
+}
+
+function isAllPositionsSelected(departmentId: string) {
+  return dataPermissionForm.allPositionDepartments.includes(departmentId);
+}
+
+function isPermissionPositionSelected(departmentId: string, positionId: string) {
+  return (dataPermissionForm.positionIdsByDepartment[departmentId] ?? []).includes(positionId);
+}
+
+function resetDataPermissionForm() {
+  dataPermissionForm.departmentIds = [];
+  dataPermissionForm.allPositionDepartments = [];
+  dataPermissionForm.positionIdsByDepartment = {};
+  dataPermissionMessage.value = "";
+}
+
+function loadSupervisorDataPermission(supervisorId: string) {
+  resetDataPermissionForm();
+  dataPermissionForm.supervisorId = supervisorId;
+  const scopes = state.supervisorScopes.filter((scope) => scope.supervisorId === supervisorId);
+  const departmentIds = new Set<string>();
+  const allPositionDepartments = new Set<string>();
+  const positionIdsByDepartment: Record<string, string[]> = {};
+
+  for (const scope of scopes) {
+    departmentIds.add(scope.departmentId);
+    if (scope.allPositions) {
+      allPositionDepartments.add(scope.departmentId);
+      continue;
+    }
+    if (scope.positionId) {
+      positionIdsByDepartment[scope.departmentId] = [
+        ...(positionIdsByDepartment[scope.departmentId] ?? []),
+        scope.positionId
+      ];
+    }
+  }
+
+  dataPermissionForm.departmentIds = [...departmentIds];
+  dataPermissionForm.allPositionDepartments = [...allPositionDepartments];
+  dataPermissionForm.positionIdsByDepartment = positionIdsByDepartment;
+}
+
+function togglePermissionDepartment(departmentId: string, checked: boolean) {
+  if (checked && !dataPermissionForm.departmentIds.includes(departmentId)) {
+    dataPermissionForm.departmentIds.push(departmentId);
+  }
+  if (!checked) {
+    dataPermissionForm.departmentIds = dataPermissionForm.departmentIds.filter((id) => id !== departmentId);
+    dataPermissionForm.allPositionDepartments = dataPermissionForm.allPositionDepartments.filter((id) => id !== departmentId);
+    delete dataPermissionForm.positionIdsByDepartment[departmentId];
+  }
+}
+
+function toggleAllPositions(departmentId: string, checked: boolean) {
+  if (!isPermissionDepartmentSelected(departmentId)) {
+    togglePermissionDepartment(departmentId, true);
+  }
+  if (checked && !dataPermissionForm.allPositionDepartments.includes(departmentId)) {
+    dataPermissionForm.allPositionDepartments.push(departmentId);
+    dataPermissionForm.positionIdsByDepartment[departmentId] = [];
+  }
+  if (!checked) {
+    dataPermissionForm.allPositionDepartments = dataPermissionForm.allPositionDepartments.filter((id) => id !== departmentId);
+  }
+}
+
+function togglePermissionPosition(departmentId: string, positionId: string, checked: boolean) {
+  if (!isPermissionDepartmentSelected(departmentId)) {
+    togglePermissionDepartment(departmentId, true);
+  }
+  dataPermissionForm.allPositionDepartments = dataPermissionForm.allPositionDepartments.filter((id) => id !== departmentId);
+  const currentPositionIds = dataPermissionForm.positionIdsByDepartment[departmentId] ?? [];
+  dataPermissionForm.positionIdsByDepartment[departmentId] = checked
+    ? [...new Set([...currentPositionIds, positionId])]
+    : currentPositionIds.filter((id) => id !== positionId);
+}
+
+function buildSupervisorScopePayload() {
+  return dataPermissionForm.departmentIds.map((departmentId): SupervisorDataScopeInput => {
+    const allPositions = isAllPositionsSelected(departmentId);
+    return {
+      departmentId,
+      allPositions,
+      positionIds: allPositions ? [] : dataPermissionForm.positionIdsByDepartment[departmentId] ?? []
+    };
+  });
+}
+
+async function submitDataPermission() {
+  const operator = currentUser.value;
+  if (!operator || operator.role !== "admin") {
+    dataPermissionMessage.value = "只有管理员可以配置数据权限";
+    return;
+  }
+  if (!dataPermissionForm.supervisorId) {
+    dataPermissionMessage.value = "请选择主管账号";
+    return;
+  }
+  try {
+    const savedScopes = await api.permissions.saveSupervisorScope(
+      dataPermissionForm.supervisorId,
+      buildSupervisorScopePayload()
+    );
+    state.supervisorScopes = [
+      ...state.supervisorScopes.filter((scope) => scope.supervisorId !== dataPermissionForm.supervisorId),
+      ...savedScopes
+    ];
+    loadSupervisorDataPermission(dataPermissionForm.supervisorId);
+    dataPermissionMessage.value = "数据权限已保存";
+  } catch (e) {
+    dataPermissionMessage.value = e instanceof Error ? e.message : "保存失败";
+  }
+}
+
 async function login() {
   try {
     const r = await api.auth.login({ account: loginForm.account.trim(), password: loginForm.password });
-    await refresh();
+    saveAuthToken(r.token);
+    currentUserId.value = r.user.id;
+    await refresh(r.user.id);
     const u = state.employees.find(e => e.id === r.user.id);
     if (!u) {
       loginError.value = "账号或密码错误";
+      currentUserId.value = "";
+      clearAuthToken();
       return;
     }
     if (u.status === "离职") {
@@ -925,7 +1090,6 @@ async function login() {
       return;
     }
     loginError.value = "";
-    currentUserId.value = u.id;
     activePage.value = menuMap[u.role][0].key;
     loginForm.account = "";
     loginForm.password = "";
@@ -943,8 +1107,10 @@ async function initializeAdmin() {
       departmentName: setupForm.departmentName.trim(),
       positionName: setupForm.positionName.trim()
     });
-    await refresh();
+    saveAuthToken(r.token);
     currentUserId.value = r.user.id;
+    needsInitialSetup.value = false;
+    await refresh(r.user.id);
     activePage.value = "peopleAdmin";
     personForm.departmentId = r.user.departmentId;
     personForm.positionId = r.user.positionId;
@@ -961,10 +1127,14 @@ async function initializeAdmin() {
 
 function logout() {
   currentUserId.value = "";
+  clearAuthToken();
 }
 
 function setPage(page: string) {
   activePage.value = page;
+  if (page === "dataPermission" && !dataPermissionForm.supervisorId && supervisorEmployees.value.length) {
+    loadSupervisorDataPermission(supervisorEmployees.value[0].id);
+  }
 }
 
 function resetDeviceForm() {
@@ -2158,6 +2328,82 @@ async function submitStockIn() {
                   </tr>
                 </tbody>
               </table>
+            </section>
+          </section>
+
+          <section v-if="activePage === 'dataPermission'" class="archive-layout wide-panel">
+            <form class="form-panel" @submit.prevent="submitDataPermission">
+              <div class="form-title">数据权限配置</div>
+              <label>
+                <span>主管账号</span>
+                <select v-model="dataPermissionForm.supervisorId" required @change="loadSupervisorDataPermission(dataPermissionForm.supervisorId)">
+                  <option value="" disabled>请选择主管</option>
+                  <option v-for="employee in supervisorEmployees" :key="employee.id" :value="employee.id">
+                    {{ employeeDisplay(employee) }}
+                  </option>
+                </select>
+              </label>
+
+              <section v-for="department in state.departments" :key="department.id" class="form-subsection">
+                <label class="checkbox-row">
+                  <input
+                    :checked="isPermissionDepartmentSelected(department.id)"
+                    type="checkbox"
+                    @change="togglePermissionDepartment(department.id, eventChecked($event))"
+                  />
+                  <span>{{ department.name }}</span>
+                </label>
+                <div v-if="isPermissionDepartmentSelected(department.id)" class="permission-position-box">
+                  <label class="checkbox-row">
+                    <input
+                      :checked="isAllPositionsSelected(department.id)"
+                      type="checkbox"
+                      @change="toggleAllPositions(department.id, eventChecked($event))"
+                    />
+                    <span>该部门全部岗位</span>
+                  </label>
+                  <label v-for="position in positionsByDepartment(department.id)" :key="position.id" class="checkbox-row">
+                    <input
+                      :checked="isPermissionPositionSelected(department.id, position.id)"
+                      :disabled="isAllPositionsSelected(department.id)"
+                      type="checkbox"
+                      @change="togglePermissionPosition(department.id, position.id, eventChecked($event))"
+                    />
+                    <span>{{ position.name }}</span>
+                  </label>
+                  <p v-if="!positionsByDepartment(department.id).length" class="form-help">该部门暂无岗位。</p>
+                </div>
+              </section>
+
+              <div class="button-row">
+                <button class="primary-btn" type="submit">保存权限</button>
+                <button class="ghost-btn" type="button" @click="resetDataPermissionForm">清空选择</button>
+              </div>
+              <p v-if="dataPermissionMessage" class="form-help">{{ dataPermissionMessage }}</p>
+            </form>
+
+            <section class="table-panel">
+              <div class="section-title">已配置权限</div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>主管</th>
+                    <th>授权部门</th>
+                    <th>岗位范围</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="scope in supervisorScopesForSelected" :key="scope.id">
+                    <td>{{ selectedDataPermissionSupervisor ? employeeDisplay(selectedDataPermissionSupervisor) : "" }}</td>
+                    <td>{{ getDepartmentName(scope.departmentId) }}</td>
+                    <td>{{ scope.allPositions ? "全部岗位" : getPositionName(scope.positionId ?? "") }}</td>
+                  </tr>
+                  <tr v-if="!supervisorScopesForSelected.length">
+                    <td colspan="3">暂无配置</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p class="form-help">员工账号只看本人；HR 的人员档案看全部；管理员看全部；主管按这里配置的部门和岗位查看人员档案与资产数据。</p>
             </section>
           </section>
 

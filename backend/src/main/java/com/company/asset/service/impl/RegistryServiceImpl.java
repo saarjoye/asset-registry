@@ -9,6 +9,7 @@ import com.company.asset.entity.HandoverTask;
 import com.company.asset.entity.PhoneNumber;
 import com.company.asset.entity.Position;
 import com.company.asset.entity.RecycleRecord;
+import com.company.asset.entity.SupervisorDataScope;
 import com.company.asset.mapper.ChannelAccountMapper;
 import com.company.asset.mapper.DepartmentMapper;
 import com.company.asset.mapper.DeviceAssetMapper;
@@ -17,6 +18,7 @@ import com.company.asset.mapper.HandoverTaskMapper;
 import com.company.asset.mapper.PhoneNumberMapper;
 import com.company.asset.mapper.PositionMapper;
 import com.company.asset.mapper.RecycleRecordMapper;
+import com.company.asset.mapper.SupervisorDataScopeMapper;
 import com.company.asset.service.RegistryService;
 import com.company.asset.service.SummaryRows;
 import com.company.asset.service.SummaryRows.AccountSummaryRow;
@@ -34,6 +36,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -72,6 +75,7 @@ public class RegistryServiceImpl implements RegistryService {
   private final ChannelAccountMapper channelAccountMapper;
   private final HandoverTaskMapper handoverTaskMapper;
   private final RecycleRecordMapper recycleRecordMapper;
+  private final SupervisorDataScopeMapper supervisorDataScopeMapper;
 
   public RegistryServiceImpl(
       DepartmentMapper departmentMapper,
@@ -81,7 +85,8 @@ public class RegistryServiceImpl implements RegistryService {
       DeviceAssetMapper deviceAssetMapper,
       ChannelAccountMapper channelAccountMapper,
       HandoverTaskMapper handoverTaskMapper,
-      RecycleRecordMapper recycleRecordMapper
+      RecycleRecordMapper recycleRecordMapper,
+      SupervisorDataScopeMapper supervisorDataScopeMapper
   ) {
     this.departmentMapper = departmentMapper;
     this.positionMapper = positionMapper;
@@ -91,6 +96,7 @@ public class RegistryServiceImpl implements RegistryService {
     this.channelAccountMapper = channelAccountMapper;
     this.handoverTaskMapper = handoverTaskMapper;
     this.recycleRecordMapper = recycleRecordMapper;
+    this.supervisorDataScopeMapper = supervisorDataScopeMapper;
   }
 
   private String nextId(String prefix) {
@@ -170,6 +176,11 @@ public class RegistryServiceImpl implements RegistryService {
   }
 
   @Override
+  public boolean setupRequired() {
+    return employeeMapper.selectCount(null) == 0;
+  }
+
+  @Override
   public Optional<Employee> login(LoginRequest request) {
     QueryWrapper<Employee> qw = new QueryWrapper<>();
     qw.eq("login_account", request.account());
@@ -188,6 +199,11 @@ public class RegistryServiceImpl implements RegistryService {
   }
 
   @Override
+  public Employee employee(String employeeId) {
+    return requireEmployee(employeeId);
+  }
+
+  @Override
   public List<Department> departments() {
     return departmentMapper.selectList(null);
   }
@@ -198,28 +214,215 @@ public class RegistryServiceImpl implements RegistryService {
   }
 
   @Override
-  public List<Employee> employees() {
-    return employeeMapper.selectList(null);
+  public List<Employee> employees(String viewerId) {
+    if (viewerId == null || viewerId.isBlank()) {
+      return List.of();
+    }
+    Employee viewer = requireEmployee(viewerId);
+    return visibleEmployeesForArchive(viewer);
   }
 
   @Override
-  public List<PhoneNumber> phones() {
-    return phoneNumberMapper.selectList(null);
+  public List<PhoneNumber> phones(String viewerId) {
+    if (viewerId == null || viewerId.isBlank()) {
+      return List.of();
+    }
+    Set<String> visibleEmployeeIds = visibleEmployeesForData(requireEmployee(viewerId)).stream()
+        .map(Employee::getId)
+        .collect(Collectors.toSet());
+    return phoneNumberMapper.selectList(null).stream()
+        .filter(p -> visibleEmployeeIds.contains(p.getEmployeeId()))
+        .toList();
   }
 
   @Override
-  public List<DeviceAsset> devices() {
-    return deviceAssetMapper.selectList(null);
+  public List<DeviceAsset> devices(String viewerId) {
+    if (viewerId == null || viewerId.isBlank()) {
+      return List.of();
+    }
+    Employee viewer = requireEmployee(viewerId);
+    Set<String> visibleEmployeeIds = visibleEmployeesForData(viewer).stream()
+        .map(Employee::getId)
+        .collect(Collectors.toSet());
+    return deviceAssetMapper.selectList(null).stream()
+        .filter(d -> visibleDevice(viewer, visibleEmployeeIds, d))
+        .toList();
   }
 
   @Override
-  public List<ChannelAccount> accounts() {
-    return channelAccountMapper.selectList(null);
+  public List<ChannelAccount> accounts(String viewerId) {
+    if (viewerId == null || viewerId.isBlank()) {
+      return List.of();
+    }
+    Set<String> visibleEmployeeIds = visibleEmployeesForData(requireEmployee(viewerId)).stream()
+        .map(Employee::getId)
+        .collect(Collectors.toSet());
+    return channelAccountMapper.selectList(null).stream()
+        .filter(a -> visibleEmployeeIds.contains(a.getEmployeeId()))
+        .toList();
   }
 
   @Override
-  public List<HandoverTask> handoverTasks() {
-    return handoverTaskMapper.selectList(null);
+  public List<SupervisorDataScope> supervisorDataScopesForAdmin(String operatorId) {
+    Employee operator = requireEmployee(operatorId);
+    if (!"admin".equals(operator.getRoleCode())) {
+      throw new IllegalArgumentException("only admin can view data scope");
+    }
+    return supervisorDataScopeMapper.selectList(null);
+  }
+
+  @Override
+  public List<SupervisorDataScope> supervisorDataScopes(String supervisorId) {
+    return supervisorDataScopeMapper.selectList(
+        new QueryWrapper<SupervisorDataScope>().eq("supervisor_id", supervisorId)
+    );
+  }
+
+  @Override
+  @Transactional
+  public List<SupervisorDataScope> saveSupervisorDataScopes(
+      String operatorId,
+      String supervisorId,
+      SupervisorDataScopeRequest request
+  ) {
+    Employee operator = requireEmployee(operatorId);
+    if (!"admin".equals(operator.getRoleCode())) {
+      throw new IllegalArgumentException("only admin can configure data scope");
+    }
+    Employee supervisor = requireEmployee(supervisorId);
+    if (!"supervisor".equals(supervisor.getRoleCode())) {
+      throw new IllegalArgumentException("target employee is not supervisor");
+    }
+    supervisorDataScopeMapper.delete(new QueryWrapper<SupervisorDataScope>().eq("supervisor_id", supervisorId));
+    LocalDateTime time = now();
+    if (request != null && request.scopes() != null) {
+      for (SupervisorDataScopeItem item : request.scopes()) {
+        String departmentId = normalizeText(item.departmentId());
+        if (departmentId == null || departmentMapper.selectById(departmentId) == null) {
+          throw new IllegalArgumentException("department not found");
+        }
+        if (Boolean.TRUE.equals(item.allPositions())) {
+          insertSupervisorDataScope(supervisorId, departmentId, null, true, time);
+          continue;
+        }
+        List<String> positionIds = item.positionIds() == null ? List.of() : item.positionIds();
+        for (String rawPositionId : positionIds.stream().filter(Objects::nonNull).distinct().toList()) {
+          String positionId = normalizeText(rawPositionId);
+          Position position = positionId == null ? null : positionMapper.selectById(positionId);
+          if (position == null || !Objects.equals(position.getDepartmentId(), departmentId)) {
+            throw new IllegalArgumentException("position not found in department");
+          }
+          insertSupervisorDataScope(supervisorId, departmentId, positionId, false, time);
+        }
+      }
+    }
+    return supervisorDataScopes(supervisorId);
+  }
+
+  private void insertSupervisorDataScope(
+      String supervisorId,
+      String departmentId,
+      String positionId,
+      boolean allPositions,
+      LocalDateTime time
+  ) {
+    SupervisorDataScope scope = new SupervisorDataScope();
+    scope.setId(nextId("scope"));
+    scope.setSupervisorId(supervisorId);
+    scope.setDepartmentId(departmentId);
+    scope.setPositionId(positionId);
+    scope.setAllPositions(allPositions);
+    scope.setCreatedAt(time);
+    scope.setUpdatedAt(time);
+    supervisorDataScopeMapper.insert(scope);
+  }
+
+  private List<Employee> visibleEmployeesForArchive(Employee viewer) {
+    if ("admin".equals(viewer.getRoleCode()) || "hr".equals(viewer.getRoleCode())) {
+      return employeeMapper.selectList(null);
+    }
+    if ("supervisor".equals(viewer.getRoleCode())) {
+      return employeeMapper.selectList(null).stream()
+          .filter(e -> Objects.equals(e.getId(), viewer.getId()) || matchesSupervisorScope(viewer.getId(), e))
+          .toList();
+    }
+    return employeeMapper.selectList(null).stream()
+        .filter(e -> Objects.equals(e.getId(), viewer.getId()))
+        .toList();
+  }
+
+  private List<Employee> visibleEmployeesForData(Employee viewer) {
+    if ("admin".equals(viewer.getRoleCode())) {
+      return employeeMapper.selectList(null);
+    }
+    if ("supervisor".equals(viewer.getRoleCode())) {
+      return employeeMapper.selectList(null).stream()
+          .filter(e -> Objects.equals(e.getId(), viewer.getId()) || matchesSupervisorScope(viewer.getId(), e))
+          .toList();
+    }
+    return employeeMapper.selectList(null).stream()
+        .filter(e -> Objects.equals(e.getId(), viewer.getId()))
+        .toList();
+  }
+
+  private boolean matchesSupervisorScope(String supervisorId, Employee target) {
+    if (target == null) {
+      return false;
+    }
+    return supervisorDataScopes(supervisorId).stream().anyMatch(scope ->
+        Objects.equals(scope.getDepartmentId(), target.getDepartmentId())
+            && (Boolean.TRUE.equals(scope.getAllPositions())
+            || Objects.equals(scope.getPositionId(), target.getPositionId()))
+    );
+  }
+
+  private boolean departmentAllowedForSupervisor(String supervisorId, String departmentId) {
+    return supervisorDataScopes(supervisorId).stream()
+        .anyMatch(scope -> Objects.equals(scope.getDepartmentId(), departmentId));
+  }
+
+  private boolean visibleDevice(Employee viewer, Set<String> visibleEmployeeIds, DeviceAsset device) {
+    if ("admin".equals(viewer.getRoleCode())) {
+      return true;
+    }
+    if (device.getEmployeeId() != null && visibleEmployeeIds.contains(device.getEmployeeId())) {
+      return true;
+    }
+    return "supervisor".equals(viewer.getRoleCode())
+        && device.getEmployeeId() == null
+        && departmentAllowedForSupervisor(viewer.getId(), device.getDepartmentId());
+  }
+
+  @Override
+  public List<HandoverTask> handoverTasks(String viewerId) {
+    if (viewerId == null || viewerId.isBlank()) {
+      return List.of();
+    }
+    Employee viewer = requireEmployee(viewerId);
+    if ("admin".equals(viewer.getRoleCode())) {
+      return handoverTaskMapper.selectList(null);
+    }
+    Set<String> visibleEmployeeIds = visibleEmployeesForData(viewer).stream()
+        .map(Employee::getId)
+        .collect(Collectors.toSet());
+    return handoverTaskMapper.selectList(null).stream()
+        .filter(task -> visibleHandoverTask(viewer, visibleEmployeeIds, task))
+        .toList();
+  }
+
+  private boolean visibleHandoverTask(Employee viewer, Set<String> visibleEmployeeIds, HandoverTask task) {
+    if (Objects.equals(task.getApplicantId(), viewer.getId())
+        || Objects.equals(task.getReceiverEmployeeId(), viewer.getId())
+        || Objects.equals(task.getApprovedById(), viewer.getId())) {
+      return true;
+    }
+    if ("supervisor".equals(viewer.getRoleCode())) {
+      return visibleEmployeeIds.contains(task.getApplicantId())
+          || visibleEmployeeIds.contains(task.getReceiverEmployeeId())
+          || departmentAllowedForSupervisor(viewer.getId(), task.getSourceDepartmentId())
+          || departmentAllowedForSupervisor(viewer.getId(), task.getReceiverDepartmentId());
+    }
+    return false;
   }
 
   @Override
@@ -691,22 +894,13 @@ public class RegistryServiceImpl implements RegistryService {
   @Override
   public SummaryRows summary(String userId, String scope) {
     Employee user = requireEmployee(userId);
-    List<Employee> scopedEmployees = employeeMapper.selectList(null).stream()
-        .filter(e -> switch (scope) {
-          case "all" -> true;
-          case "department" -> Objects.equals(e.getDepartmentId(), user.getDepartmentId());
-          default -> Objects.equals(e.getId(), user.getId());
-        })
-        .toList();
+    List<Employee> scopedEmployees = visibleEmployeesForData(user);
     List<String> scopedEmployeeIds = scopedEmployees.stream().map(Employee::getId).toList();
+    Set<String> scopedEmployeeIdSet = Set.copyOf(scopedEmployeeIds);
     List<Employee> allEmployees = employeeMapper.selectList(null);
 
     List<DeviceSummaryRow> deviceRows = deviceAssetMapper.selectList(null).stream()
-        .filter(d -> {
-          if ("all".equals(scope)) return true;
-          if ("department".equals(scope)) return Objects.equals(d.getDepartmentId(), user.getDepartmentId());
-          return scopedEmployeeIds.contains(d.getEmployeeId());
-        })
+        .filter(d -> visibleDevice(user, scopedEmployeeIdSet, d))
         .map(d -> {
           Employee owner = d.getEmployeeId() == null ? null : employeeMapper.selectById(d.getEmployeeId());
           PhoneNumber phone = d.getPhoneId() == null ? null : phoneNumberMapper.selectById(d.getPhoneId());
