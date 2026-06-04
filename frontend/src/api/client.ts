@@ -11,12 +11,15 @@ class HttpError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const isFormData = init.body instanceof FormData;
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init.headers ?? {})
-    }
+    headers: isFormData
+      ? init.headers
+      : {
+          "Content-Type": "application/json",
+          ...(init.headers ?? {})
+        }
   });
   const text = await res.text();
   let parsed: unknown = text;
@@ -32,6 +35,15 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return parsed as T;
 }
 
+async function requestBlob(path: string): Promise<Blob> {
+  const res = await fetch(`${API_BASE}${path}`);
+  if (!res.ok) {
+    const text = await res.text();
+    throw new HttpError(res.status, text, text || `HTTP ${res.status}`);
+  }
+  return res.blob();
+}
+
 export type Role = "admin" | "supervisor" | "hr" | "employee";
 export type EmployeeStatus = "在职" | "离职申请中" | "离职";
 export type DeviceStatus = "在用" | "待回收" | "接收待确认" | "已回收" | "已移交" | "旧机入库";
@@ -39,7 +51,14 @@ export type HandoverStatus = "待主管审批" | "待接收确认" | "已完成"
 export type HandoverTargetType = "本部门员工" | "其它部门员工" | "回收入库" | "资产分配";
 
 export interface Department { id: string; name: string; }
-export interface Position { id: string; name: string; }
+export interface Position { id: string; departmentId: string; name: string; }
+export interface ImportResult {
+  totalRows: number;
+  successRows: number;
+  createdRows: number;
+  skippedRows: number;
+  errors: string[];
+}
 export interface Employee {
   id: string;
   employeeNo: string;
@@ -155,8 +174,24 @@ export const api = {
       return request<Department>("/archive/departments", { method: "POST", body: JSON.stringify(payload) });
     },
     positions: () => request<Position[]>("/archive/positions"),
-    savePosition(payload: { id?: string; name: string }) {
+    savePosition(payload: { id?: string; departmentId: string; name: string }) {
       return request<Position>("/archive/positions", { method: "POST", body: JSON.stringify(payload) });
+    },
+    importDepartmentsAndPositions(file: File) {
+      const form = new FormData();
+      form.append("file", file);
+      return request<ImportResult>("/archive/import/departments-positions", { method: "POST", body: form });
+    },
+    importEmployees(file: File) {
+      const form = new FormData();
+      form.append("file", file);
+      return request<ImportResult>("/archive/import/employees", { method: "POST", body: form });
+    },
+    departmentPositionTemplate() {
+      return requestBlob("/archive/import/templates/departments-positions");
+    },
+    employeeTemplate() {
+      return requestBlob("/archive/import/templates/employees");
     },
     phones: () => request<PhoneNumber[]>("/archive/phones"),
     devices: () => request<DeviceAsset[]>("/archive/devices"),

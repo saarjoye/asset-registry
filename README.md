@@ -57,6 +57,32 @@ npm run dev
 H2 控制台：http://127.0.0.1:8080/h2-console
 JDBC URL：`jdbc:h2:file:./data/work;MODE=MySQL`，用户 `sa`，无密码。这里的 `MODE=MySQL` 只是 H2 兼容模式，不代表生产环境使用 MySQL。
 
+## Excel 批量导入
+
+管理员和人事账号登录后，可在“批量导入”页面上传 Excel。文件只在本系统后端解析，不会上传到外部服务。
+
+每个导入卡片都提供“下载模板”按钮，建议先下载模板再填写，避免 Sheet 名称或表头不一致导致导入失败。
+
+部门岗位导入建议使用两个 Sheet：
+
+| Sheet | 表头 |
+|---|---|
+| `部门` | `部门名称` |
+| `岗位` | `职位名称`、`所属部门` |
+
+人员档案导入使用 `人员` Sheet：
+
+| 表头 | 说明 |
+|---|---|
+| `姓名` | 必填，同名允许存在，由系统人员编号区分 |
+| `性别` | 必填，仅支持 `男` / `女` |
+| `入职时间` | 必填，建议格式 `yyyy-MM-dd` |
+| `用户名` | 必填，作为登录账号，重复用户名会跳过 |
+| `职位` | 必填，按“部门 + 职位”匹配，不存在则自动创建 |
+| `部门` | 必填，不存在则自动创建 |
+
+导入人员默认 `年龄=0`、`状态=在职`、`角色=员工`、`初始密码=123456`。
+
 ## Docker 一键测试（无需 .env）
 
 ```powershell
@@ -83,7 +109,8 @@ docker compose down -v
 `docker-compose.pgsql.yml` 使用公开预构建镜像，不需要在 NAS 上构建，也不需要拉取 Maven / Node 基础镜像：
 
 ```powershell
-docker compose -p asset-registry -f docker-compose.pgsql.yml up -d --build
+docker compose -p asset-registry -f docker-compose.pgsql.yml pull
+docker compose -p asset-registry -f docker-compose.pgsql.yml up -d
 ```
 
 如果 PostgreSQL 在宿主机本机，Docker Desktop 通常可用 `host.docker.internal` 作为 `DB_HOST`；NAS 上建议填 PostgreSQL 所在机器的局域网 IP、容器网络别名或反向代理域名。
@@ -111,6 +138,10 @@ Compose 中需要替换以下占位值；不需要也不推荐提交 `.env` 文�
 - `GET /api/archive/employees|phones|devices|accounts|departments|positions` 拉取全表
 - `POST /api/archive/employees[?includeAccount=true]` 增改员工
 - `POST /api/archive/departments|positions` 增改部门 / 岗位
+- `POST /api/archive/import/departments-positions` Excel 导入部门 / 岗位
+- `POST /api/archive/import/employees` Excel 导入人员档案
+- `GET /api/archive/import/templates/departments-positions` 下载部门岗位导入模板
+- `GET /api/archive/import/templates/employees` 下载人员档案导入模板
 - `POST /api/archive/accounts/open` 开通登录账号
 - `POST /api/registry/users/{employeeId}/devices` 登记设备
 - `POST /api/registry/users/{employeeId}/accounts` 登记渠道账号

@@ -17,7 +17,8 @@ import {
   type EmployeeStatus,
   type DeviceStatus,
   type HandoverStatus,
-  type HandoverTargetType
+  type HandoverTargetType,
+  type ImportResult
 } from "./api/adapter";
 
 type RealNameStatus = "已实名" | "未实名";
@@ -70,6 +71,7 @@ const menuMap: Record<Role, MenuItem[]> = {
     { key: "people", label: "人员档案" },
     { key: "departments", label: "部门档案" },
     { key: "positions", label: "岗位档案" },
+    { key: "archiveImport", label: "批量导入" },
     { key: "summary", label: "名下汇总" },
     { key: "openAccount", label: "开通账号" },
     { key: "receiveConfirm", label: "待确认" }
@@ -79,6 +81,7 @@ const menuMap: Record<Role, MenuItem[]> = {
     { key: "account", label: "登记账号" },
     { key: "peopleAdmin", label: "人员档案" },
     { key: "deptPosition", label: "部门岗位档案" },
+    { key: "archiveImport", label: "批量导入" },
     { key: "allSummary", label: "所有汇总" },
     { key: "deviceAllocation", label: "资产分配" },
     { key: "receiveConfirm", label: "待确认" }
@@ -159,7 +162,12 @@ const personForm = reactive({
 });
 
 const deptForm = reactive({ id: "", name: "" });
-const positionForm = reactive({ id: "", name: "" });
+const positionForm = reactive({ id: "", departmentId: "", name: "" });
+const deptPositionImportInput = ref<HTMLInputElement | null>(null);
+const employeeImportInput = ref<HTMLInputElement | null>(null);
+const importBusy = ref(false);
+const importResult = ref<ImportResult | null>(null);
+const importMessage = ref("");
 const openAccountForm = reactive({
   employeeId: "",
   account: "",
@@ -286,6 +294,10 @@ const currentPositionName = computed(() => {
   }
 
   return getPositionName(currentUser.value.positionId);
+});
+
+const personDepartmentPositions = computed(() => {
+  return state.positions.filter((position) => position.departmentId === personForm.departmentId);
 });
 
 const currentPhones = computed(() => {
@@ -652,6 +664,27 @@ watch(
   () => approvalForm.targetType,
   () => {
     approvalForm.receiverEmployeeId = "";
+  }
+);
+
+watch(
+  () => personForm.departmentId,
+  () => {
+    if (!personDepartmentPositions.value.some((position) => position.id === personForm.positionId)) {
+      personForm.positionId = personDepartmentPositions.value[0]?.id ?? "";
+    }
+  }
+);
+
+watch(
+  () => state.departments.length,
+  () => {
+    if (!positionForm.departmentId) {
+      positionForm.departmentId = state.departments[0]?.id ?? "";
+    }
+    if (!personForm.departmentId) {
+      personForm.departmentId = state.departments[0]?.id ?? "";
+    }
   }
 );
 
@@ -1115,7 +1148,7 @@ function resetPersonForm() {
   personForm.gender = "男";
   personForm.age = 0;
   personForm.departmentId = state.departments[0]?.id ?? "";
-  personForm.positionId = state.positions[0]?.id ?? "";
+  personForm.positionId = state.positions.find((position) => position.departmentId === personForm.departmentId)?.id ?? "";
   personForm.hireDate = new Date().toISOString().slice(0, 10);
   personForm.status = "在职";
   personForm.account = "";
@@ -1176,9 +1209,14 @@ function editDepartment(department: Department) {
 
 async function submitPosition() {
   try {
-    await api.archive.savePosition({ id: positionForm.id || undefined, name: positionForm.name.trim() });
+    await api.archive.savePosition({
+      id: positionForm.id || undefined,
+      departmentId: positionForm.departmentId,
+      name: positionForm.name.trim()
+    });
     await refresh();
     positionForm.id = "";
+    positionForm.departmentId = state.departments[0]?.id ?? "";
     positionForm.name = "";
   } catch (e) {
     dataError.value = e instanceof Error ? e.message : "保存失败";
@@ -1187,7 +1225,90 @@ async function submitPosition() {
 
 function editPosition(position: Position) {
   positionForm.id = position.id;
+  positionForm.departmentId = position.departmentId;
   positionForm.name = position.name;
+}
+
+function resetPositionForm() {
+  positionForm.id = "";
+  positionForm.departmentId = state.departments[0]?.id ?? "";
+  positionForm.name = "";
+}
+
+function importSummary(result: ImportResult) {
+  return `读取 ${result.totalRows} 行，成功 ${result.successRows} 行，新建 ${result.createdRows} 条，跳过 ${result.skippedRows} 行`;
+}
+
+function saveTemplate(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function downloadDepartmentsAndPositionsTemplate() {
+  try {
+    const blob = await api.archive.departmentPositionTemplate();
+    saveTemplate(blob, "部门岗位导入模板.xlsx");
+  } catch (e) {
+    importMessage.value = e instanceof Error ? e.message : "模板下载失败";
+  }
+}
+
+async function downloadEmployeesTemplate() {
+  try {
+    const blob = await api.archive.employeeTemplate();
+    saveTemplate(blob, "人员档案导入模板.xlsx");
+  } catch (e) {
+    importMessage.value = e instanceof Error ? e.message : "模板下载失败";
+  }
+}
+
+async function uploadDepartmentsAndPositions(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  importBusy.value = true;
+  importMessage.value = "";
+  importResult.value = null;
+  try {
+    const result = await api.archive.importDepartmentsAndPositions(file);
+    importResult.value = result;
+    importMessage.value = `部门岗位导入完成：${importSummary(result)}`;
+    await refresh();
+    resetPersonForm();
+    resetPositionForm();
+  } catch (e) {
+    importMessage.value = e instanceof Error ? e.message : "部门岗位导入失败";
+  } finally {
+    importBusy.value = false;
+    input.value = "";
+  }
+}
+
+async function uploadEmployees(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+  importBusy.value = true;
+  importMessage.value = "";
+  importResult.value = null;
+  try {
+    const result = await api.archive.importEmployees(file);
+    importResult.value = result;
+    importMessage.value = `人员档案导入完成：${importSummary(result)}`;
+    await refresh();
+    resetPersonForm();
+  } catch (e) {
+    importMessage.value = e instanceof Error ? e.message : "人员档案导入失败";
+  } finally {
+    importBusy.value = false;
+    input.value = "";
+  }
 }
 
 async function submitOpenAccount() {
@@ -1819,7 +1940,7 @@ async function submitStockIn() {
               <label>
                 <span>岗位</span>
                 <select v-model="personForm.positionId" required>
-                  <option v-for="position in state.positions" :key="position.id" :value="position.id">
+                  <option v-for="position in personDepartmentPositions" :key="position.id" :value="position.id">
                     {{ position.name }}
                   </option>
                 </select>
@@ -1938,12 +2059,20 @@ async function submitStockIn() {
             <form class="form-panel" @submit.prevent="submitPosition">
               <div class="form-title">岗位档案</div>
               <label>
+                <span>所属部门</span>
+                <select v-model="positionForm.departmentId" required>
+                  <option v-for="department in state.departments" :key="department.id" :value="department.id">
+                    {{ department.name }}
+                  </option>
+                </select>
+              </label>
+              <label>
                 <span>岗位名称</span>
                 <input v-model="positionForm.name" required />
               </label>
               <div class="button-row">
                 <button class="primary-btn" type="submit">{{ positionForm.id ? "修改" : "新建" }}</button>
-                <button class="ghost-btn" type="button" @click="positionForm.id = ''; positionForm.name = ''">清空</button>
+                <button class="ghost-btn" type="button" @click="resetPositionForm">清空</button>
               </div>
             </form>
             <section class="table-panel">
@@ -1951,12 +2080,14 @@ async function submitStockIn() {
               <table>
                 <thead>
                   <tr>
+                    <th>所属部门</th>
                     <th>岗位名称</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="position in state.positions" :key="position.id">
+                    <td>{{ getDepartmentName(position.departmentId) }}</td>
                     <td>{{ position.name }}</td>
                     <td>
                       <button class="small-btn" type="button" @click="editPosition(position)">修改</button>
@@ -1978,6 +2109,14 @@ async function submitStockIn() {
             </form>
             <form class="form-panel" @submit.prevent="submitPosition">
               <div class="form-title">岗位档案</div>
+              <label>
+                <span>所属部门</span>
+                <select v-model="positionForm.departmentId" required>
+                  <option v-for="department in state.departments" :key="department.id" :value="department.id">
+                    {{ department.name }}
+                  </option>
+                </select>
+              </label>
               <label>
                 <span>岗位名称</span>
                 <input v-model="positionForm.name" required />
@@ -2006,14 +2145,71 @@ async function submitStockIn() {
               <table>
                 <thead>
                   <tr>
+                    <th>所属部门</th>
                     <th>岗位名称</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="position in state.positions" :key="position.id">
+                    <td>{{ getDepartmentName(position.departmentId) }}</td>
                     <td>{{ position.name }}</td>
                     <td><button class="small-btn" type="button" @click="editPosition(position)">修改</button></td>
+                  </tr>
+                </tbody>
+              </table>
+            </section>
+          </section>
+
+          <section v-if="activePage === 'archiveImport'" class="archive-layout wide-panel">
+            <section class="form-panel">
+              <div class="form-title">部门岗位导入</div>
+              <p class="form-help">Excel 建议包含两个 Sheet：部门 Sheet 表头为“部门名称”；岗位 Sheet 表头为“职位名称、所属部门”。</p>
+              <input
+                ref="deptPositionImportInput"
+                accept=".xlsx,.xls"
+                class="hidden-file-input"
+                type="file"
+                @change="uploadDepartmentsAndPositions"
+              />
+              <div class="button-row">
+                <button class="ghost-btn" type="button" @click="downloadDepartmentsAndPositionsTemplate">下载模板</button>
+                <button class="primary-btn" :disabled="importBusy" type="button" @click="deptPositionImportInput?.click()">
+                  {{ importBusy ? "导入中" : "选择Excel导入" }}
+                </button>
+              </div>
+            </section>
+
+            <section class="form-panel">
+              <div class="form-title">人员档案导入</div>
+              <p class="form-help">人员 Sheet 表头为“姓名、性别、入职时间、用户名、职位、部门”。导入后默认状态为在职，角色为员工，初始密码为 123456。</p>
+              <input
+                ref="employeeImportInput"
+                accept=".xlsx,.xls"
+                class="hidden-file-input"
+                type="file"
+                @change="uploadEmployees"
+              />
+              <div class="button-row">
+                <button class="ghost-btn" type="button" @click="downloadEmployeesTemplate">下载模板</button>
+                <button class="primary-btn" :disabled="importBusy" type="button" @click="employeeImportInput?.click()">
+                  {{ importBusy ? "导入中" : "选择Excel导入" }}
+                </button>
+              </div>
+            </section>
+
+            <section class="table-panel compact-table-panel">
+              <div class="section-title">导入结果</div>
+              <p class="form-help">{{ importMessage || "请选择 Excel 文件开始导入。" }}</p>
+              <table v-if="importResult?.errors.length">
+                <thead>
+                  <tr>
+                    <th>未导入原因</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="error in importResult.errors" :key="error">
+                    <td>{{ error }}</td>
                   </tr>
                 </tbody>
               </table>

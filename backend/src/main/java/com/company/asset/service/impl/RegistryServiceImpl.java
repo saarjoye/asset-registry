@@ -21,18 +21,48 @@ import com.company.asset.service.RegistryService;
 import com.company.asset.service.SummaryRows;
 import com.company.asset.service.SummaryRows.AccountSummaryRow;
 import com.company.asset.service.SummaryRows.DeviceSummaryRow;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.CellType;
+import org.apache.poi.ss.usermodel.DataFormatter;
+import org.apache.poi.ss.usermodel.DateUtil;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class RegistryServiceImpl implements RegistryService {
+  private record EnsureResult<T>(T value, boolean created) {
+  }
+
+  private static class ImportAccumulator {
+    private int totalRows;
+    private int successRows;
+    private int createdRows;
+    private final List<String> errors = new ArrayList<>();
+
+    private ImportResult toResult() {
+      return new ImportResult(totalRows, successRows, createdRows, errors.size(), errors);
+    }
+  }
 
   private final DepartmentMapper departmentMapper;
   private final PositionMapper positionMapper;
@@ -117,7 +147,7 @@ public class RegistryServiceImpl implements RegistryService {
     }
     Department department = new Department(nextId("dept"), request.departmentName());
     departmentMapper.insert(department);
-    Position position = new Position(nextId("pos"), request.positionName());
+    Position position = new Position(nextId("pos"), department.getId(), request.positionName());
     positionMapper.insert(position);
 
     Employee admin = new Employee();
@@ -312,8 +342,15 @@ public class RegistryServiceImpl implements RegistryService {
   @Override
   @Transactional
   public Position savePosition(ArchiveRequest request) {
+    String departmentId = normalizeText(request.departmentId());
+    if (departmentId == null) {
+      throw new IllegalArgumentException("departmentId is required");
+    }
+    if (departmentMapper.selectById(departmentId) == null) {
+      throw new IllegalArgumentException("department not found");
+    }
     if (request.id() == null || request.id().isBlank()) {
-      Position created = new Position(nextId("pos"), request.name());
+      Position created = new Position(nextId("pos"), departmentId, request.name());
       positionMapper.insert(created);
       return created;
     }
@@ -321,9 +358,103 @@ public class RegistryServiceImpl implements RegistryService {
     if (p == null) {
       throw new IllegalArgumentException("position not found");
     }
+    p.setDepartmentId(departmentId);
     p.setName(request.name());
     positionMapper.updateById(p);
     return p;
+  }
+
+  @Override
+  @Transactional
+  public ImportResult importDepartmentsAndPositions(MultipartFile file) {
+    validateImportFile(file);
+    ImportAccumulator acc = new ImportAccumulator();
+    try (InputStream input = file.getInputStream(); Workbook workbook = WorkbookFactory.create(input)) {
+      Sheet departmentSheet = findSheet(workbook, "部门");
+      if (departmentSheet != null) {
+        importDepartmentSheet(departmentSheet, acc);
+      }
+      Sheet positionSheet = findSheet(workbook, "岗位");
+      if (positionSheet == null) {
+        positionSheet = firstSheetWithHeaders(workbook, "职位名称", "岗位名称");
+      }
+      if (positionSheet == null) {
+        acc.errors.add("未找到“岗位”Sheet，或首行缺少“职位名称/岗位名称”表头");
+      } else {
+        importPositionSheet(positionSheet, acc);
+      }
+      return acc.toResult();
+    } catch (Exception e) {
+      throw new IllegalArgumentException("导入失败：" + e.getMessage(), e);
+    }
+  }
+
+  @Override
+  @Transactional
+  public ImportResult importEmployees(MultipartFile file) {
+    validateImportFile(file);
+    ImportAccumulator acc = new ImportAccumulator();
+    try (InputStream input = file.getInputStream(); Workbook workbook = WorkbookFactory.create(input)) {
+      Sheet sheet = findSheet(workbook, "人员");
+      if (sheet == null) {
+        sheet = firstSheetWithHeaders(workbook, "姓名", "用户名");
+      }
+      if (sheet == null) {
+        acc.errors.add("未找到“人员”Sheet，或首行缺少“姓名/用户名”表头");
+        return acc.toResult();
+      }
+      importEmployeeSheet(sheet, acc);
+      return acc.toResult();
+    } catch (Exception e) {
+      throw new IllegalArgumentException("导入失败：" + e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public byte[] departmentPositionImportTemplate() {
+    try (Workbook workbook = new XSSFWorkbook()) {
+      Sheet departments = workbook.createSheet("部门");
+      writeHeader(departments, "部门名称");
+      Sheet positions = workbook.createSheet("岗位");
+      writeHeader(positions, "职位名称", "所属部门");
+      Sheet instructions = workbook.createSheet("填写说明");
+      writeRows(
+          instructions,
+          List.of(
+              List.of("模板用途", "部门岗位导入"),
+              List.of("部门Sheet", "只填写部门名称，一行一个部门"),
+              List.of("岗位Sheet", "职位名称和所属部门都必填；所属部门不存在时系统会自动创建"),
+              List.of("注意", "请不要修改Sheet名称和表头名称")
+          )
+      );
+      return workbookBytes(workbook);
+    } catch (Exception e) {
+      throw new IllegalArgumentException("生成模板失败：" + e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public byte[] employeeImportTemplate() {
+    try (Workbook workbook = new XSSFWorkbook()) {
+      Sheet employees = workbook.createSheet("人员");
+      writeHeader(employees, "姓名", "性别", "入职时间", "用户名", "职位", "部门");
+      Sheet instructions = workbook.createSheet("填写说明");
+      writeRows(
+          instructions,
+          List.of(
+              List.of("模板用途", "人员档案导入"),
+              List.of("必填字段", "姓名、性别、入职时间、用户名、职位、部门"),
+              List.of("性别", "只能填写 男 或 女"),
+              List.of("入职时间", "建议格式 yyyy-MM-dd，例如 2026-06-04"),
+              List.of("用户名", "作为登录账号，重复用户名会跳过"),
+              List.of("默认值", "年龄=0，状态=在职，角色=员工，初始密码=123456"),
+              List.of("注意", "请不要修改Sheet名称和表头名称")
+          )
+      );
+      return workbookBytes(workbook);
+    } catch (Exception e) {
+      throw new IllegalArgumentException("生成模板失败：" + e.getMessage(), e);
+    }
   }
 
   @Override
@@ -861,6 +992,296 @@ public class RegistryServiceImpl implements RegistryService {
     if (departmentId == null) return "";
     Department d = departmentMapper.selectById(departmentId);
     return d == null ? "" : d.getName();
+  }
+
+  private void writeHeader(Sheet sheet, String... headers) {
+    Row row = sheet.createRow(0);
+    for (int i = 0; i < headers.length; i++) {
+      row.createCell(i).setCellValue(headers[i]);
+      sheet.autoSizeColumn(i);
+    }
+    sheet.createFreezePane(0, 1);
+  }
+
+  private void writeRows(Sheet sheet, List<List<String>> rows) {
+    for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
+      Row row = sheet.createRow(rowIndex);
+      List<String> values = rows.get(rowIndex);
+      for (int columnIndex = 0; columnIndex < values.size(); columnIndex++) {
+        row.createCell(columnIndex).setCellValue(values.get(columnIndex));
+        sheet.autoSizeColumn(columnIndex);
+      }
+    }
+  }
+
+  private byte[] workbookBytes(Workbook workbook) {
+    try (ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+      workbook.write(output);
+      return output.toByteArray();
+    } catch (Exception e) {
+      throw new IllegalArgumentException("写入 Excel 失败：" + e.getMessage(), e);
+    }
+  }
+
+  private void validateImportFile(MultipartFile file) {
+    if (file == null || file.isEmpty()) {
+      throw new IllegalArgumentException("请选择 Excel 文件");
+    }
+    String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase();
+    if (!filename.endsWith(".xlsx") && !filename.endsWith(".xls")) {
+      throw new IllegalArgumentException("仅支持 .xlsx 或 .xls 文件");
+    }
+  }
+
+  private void importDepartmentSheet(Sheet sheet, ImportAccumulator acc) {
+    Map<String, Integer> headers = readHeaders(sheet);
+    Integer departmentIndex = headerIndex(headers, "部门名称", "部门", "科室");
+    if (departmentIndex == null) {
+      acc.errors.add("部门Sheet缺少“部门名称”表头");
+      return;
+    }
+    for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (isBlankRow(row)) continue;
+      acc.totalRows += 1;
+      String departmentName = cellText(row, departmentIndex);
+      if (departmentName == null) {
+        acc.errors.add(rowError(rowIndex, "部门名称不能为空"));
+        continue;
+      }
+      EnsureResult<Department> department = ensureDepartment(departmentName);
+      acc.successRows += 1;
+      if (department.created()) acc.createdRows += 1;
+    }
+  }
+
+  private void importPositionSheet(Sheet sheet, ImportAccumulator acc) {
+    Map<String, Integer> headers = readHeaders(sheet);
+    Integer positionIndex = headerIndex(headers, "职位名称", "岗位名称", "职位", "岗位");
+    Integer departmentIndex = headerIndex(headers, "所属部门", "部门名称", "部门", "科室");
+    if (positionIndex == null || departmentIndex == null) {
+      acc.errors.add("岗位Sheet必须包含“职位名称”和“所属部门”表头");
+      return;
+    }
+    for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (isBlankRow(row)) continue;
+      acc.totalRows += 1;
+      String positionName = cellText(row, positionIndex);
+      String departmentName = cellText(row, departmentIndex);
+      if (positionName == null || departmentName == null) {
+        acc.errors.add(rowError(rowIndex, "职位名称和所属部门不能为空"));
+        continue;
+      }
+      EnsureResult<Department> department = ensureDepartment(departmentName);
+      EnsureResult<Position> position = ensurePosition(department.value().getId(), positionName);
+      acc.successRows += 1;
+      if (department.created()) acc.createdRows += 1;
+      if (position.created()) acc.createdRows += 1;
+    }
+  }
+
+  private void importEmployeeSheet(Sheet sheet, ImportAccumulator acc) {
+    Map<String, Integer> headers = readHeaders(sheet);
+    Integer nameIndex = headerIndex(headers, "姓名");
+    Integer genderIndex = headerIndex(headers, "性别");
+    Integer hireDateIndex = headerIndex(headers, "入职时间", "入职日期");
+    Integer accountIndex = headerIndex(headers, "用户名", "账号", "登录账号");
+    Integer positionIndex = headerIndex(headers, "职位", "岗位", "职位名称", "岗位名称");
+    Integer departmentIndex = headerIndex(headers, "部门", "部门名称", "科室");
+    if (nameIndex == null || genderIndex == null || hireDateIndex == null || accountIndex == null || positionIndex == null || departmentIndex == null) {
+      acc.errors.add("人员Sheet必须包含“姓名、性别、入职时间、用户名、职位、部门”表头");
+      return;
+    }
+    for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
+      Row row = sheet.getRow(rowIndex);
+      if (isBlankRow(row)) continue;
+      acc.totalRows += 1;
+      try {
+        String name = requireCell(row, nameIndex, "姓名");
+        String gender = normalizeGender(requireCell(row, genderIndex, "性别"));
+        LocalDate hireDate = parseDate(row.getCell(hireDateIndex), rowIndex);
+        String account = requireCell(row, accountIndex, "用户名");
+        String positionName = requireCell(row, positionIndex, "职位");
+        String departmentName = requireCell(row, departmentIndex, "部门");
+        if (employeeMapper.selectCount(new QueryWrapper<Employee>().eq("login_account", account)) > 0) {
+          acc.errors.add(rowError(rowIndex, "用户名已存在：" + account));
+          continue;
+        }
+        EnsureResult<Department> department = ensureDepartment(departmentName);
+        EnsureResult<Position> position = ensurePosition(department.value().getId(), positionName);
+        Employee employee = new Employee();
+        employee.setId(nextId("emp"));
+        employee.setEmployeeNo(nextEmployeeNo());
+        employee.setName(name);
+        employee.setGender(gender);
+        employee.setAge(0);
+        employee.setDepartmentId(department.value().getId());
+        employee.setPositionId(position.value().getId());
+        employee.setHireDate(hireDate);
+        employee.setStatus("在职");
+        employee.setLoginAccount(account);
+        employee.setLoginPasswordHash("{noop}123456");
+        employee.setRoleCode("employee");
+        employee.setCreatedAt(now());
+        employee.setUpdatedAt(now());
+        employeeMapper.insert(employee);
+        acc.successRows += 1;
+        acc.createdRows += 1;
+        if (department.created()) acc.createdRows += 1;
+        if (position.created()) acc.createdRows += 1;
+      } catch (IllegalArgumentException e) {
+        acc.errors.add(rowError(rowIndex, e.getMessage()));
+      }
+    }
+  }
+
+  private EnsureResult<Department> ensureDepartment(String rawName) {
+    String name = normalizeText(rawName);
+    if (name == null) {
+      throw new IllegalArgumentException("部门名称不能为空");
+    }
+    Department existing = departmentMapper.selectOne(new QueryWrapper<Department>().eq("name", name));
+    if (existing != null) {
+      return new EnsureResult<>(existing, false);
+    }
+    Department created = new Department(nextId("dept"), name);
+    departmentMapper.insert(created);
+    return new EnsureResult<>(created, true);
+  }
+
+  private EnsureResult<Position> ensurePosition(String departmentId, String rawName) {
+    String name = normalizeText(rawName);
+    if (name == null) {
+      throw new IllegalArgumentException("职位名称不能为空");
+    }
+    Position existing = positionMapper.selectOne(
+        new QueryWrapper<Position>()
+            .eq("department_id", departmentId)
+            .eq("name", name)
+    );
+    if (existing != null) {
+      return new EnsureResult<>(existing, false);
+    }
+    Position created = new Position(nextId("pos"), departmentId, name);
+    positionMapper.insert(created);
+    return new EnsureResult<>(created, true);
+  }
+
+  private Map<String, Integer> readHeaders(Sheet sheet) {
+    Map<String, Integer> headers = new HashMap<>();
+    Row row = sheet.getRow(0);
+    if (row == null) return headers;
+    for (int i = 0; i < row.getLastCellNum(); i++) {
+      String text = normalizeHeader(cellText(row, i));
+      if (text != null) {
+        headers.put(text, i);
+      }
+    }
+    return headers;
+  }
+
+  private Integer headerIndex(Map<String, Integer> headers, String... names) {
+    for (String name : names) {
+      Integer index = headers.get(normalizeHeader(name));
+      if (index != null) return index;
+    }
+    return null;
+  }
+
+  private Sheet findSheet(Workbook workbook, String name) {
+    for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+      Sheet sheet = workbook.getSheetAt(i);
+      if (name.equals(normalizeText(sheet.getSheetName()))) {
+        return sheet;
+      }
+    }
+    return null;
+  }
+
+  private Sheet firstSheetWithHeaders(Workbook workbook, String... headers) {
+    for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
+      Sheet sheet = workbook.getSheetAt(i);
+      Map<String, Integer> actualHeaders = readHeaders(sheet);
+      for (String header : headers) {
+        if (actualHeaders.containsKey(normalizeHeader(header))) {
+          return sheet;
+        }
+      }
+    }
+    return null;
+  }
+
+  private boolean isBlankRow(Row row) {
+    if (row == null) return true;
+    for (int i = 0; i < row.getLastCellNum(); i++) {
+      if (cellText(row, i) != null) return false;
+    }
+    return true;
+  }
+
+  private String requireCell(Row row, int index, String label) {
+    String value = cellText(row, index);
+    if (value == null) {
+      throw new IllegalArgumentException(label + "不能为空");
+    }
+    return value;
+  }
+
+  private String cellText(Row row, int index) {
+    if (row == null || index < 0) return null;
+    Cell cell = row.getCell(index);
+    if (cell == null) return null;
+    String text = new DataFormatter().formatCellValue(cell);
+    return normalizeText(text);
+  }
+
+  private String normalizeText(String text) {
+    if (text == null) return null;
+    String normalized = text.trim();
+    return normalized.isEmpty() ? null : normalized;
+  }
+
+  private String normalizeHeader(String text) {
+    String normalized = normalizeText(text);
+    return normalized == null ? null : normalized.replace(" ", "").replace("　", "");
+  }
+
+  private String normalizeGender(String gender) {
+    if ("男".equals(gender) || "女".equals(gender)) {
+      return gender;
+    }
+    throw new IllegalArgumentException("性别只能填写男或女");
+  }
+
+  private LocalDate parseDate(Cell cell, int rowIndex) {
+    if (cell == null) {
+      throw new IllegalArgumentException("入职时间不能为空");
+    }
+    if (cell.getCellType() == CellType.NUMERIC && DateUtil.isCellDateFormatted(cell)) {
+      return cell.getDateCellValue().toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+    }
+    String text = normalizeText(new DataFormatter().formatCellValue(cell));
+    if (text == null) {
+      throw new IllegalArgumentException("入职时间不能为空");
+    }
+    List<DateTimeFormatter> formatters = List.of(
+        DateTimeFormatter.ISO_LOCAL_DATE,
+        DateTimeFormatter.ofPattern("yyyy/M/d"),
+        DateTimeFormatter.ofPattern("yyyy.M.d"),
+        DateTimeFormatter.ofPattern("yyyy年M月d日")
+    );
+    for (DateTimeFormatter formatter : formatters) {
+      try {
+        return LocalDate.parse(text, formatter);
+      } catch (DateTimeParseException ignored) {
+      }
+    }
+    throw new IllegalArgumentException("入职时间格式错误，请使用 yyyy-MM-dd：" + text);
+  }
+
+  private String rowError(int rowIndex, String message) {
+    return "第 " + (rowIndex + 1) + " 行：" + message;
   }
 
   private void insertRecycle(DeviceAsset d, String actionType, String operatorId) {

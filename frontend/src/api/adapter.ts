@@ -11,7 +11,7 @@ export type {
   Role
 };
 
-export type { DeviceSummaryRow, AccountSummaryRow, SummaryRows } from "./client";
+export type { DeviceSummaryRow, AccountSummaryRow, SummaryRows, ImportResult } from "./client";
 
 export interface Employee {
   id: string;

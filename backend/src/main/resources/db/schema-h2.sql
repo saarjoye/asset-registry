@@ -7,10 +7,14 @@ CREATE TABLE IF NOT EXISTS department (
 
 CREATE TABLE IF NOT EXISTS position_table (
   id VARCHAR(40) PRIMARY KEY,
-  name VARCHAR(80) NOT NULL UNIQUE,
+  department_id VARCHAR(40),
+  name VARCHAR(80) NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE position_table ADD COLUMN IF NOT EXISTS department_id VARCHAR(40);
+ALTER TABLE position_table DROP CONSTRAINT IF EXISTS position_table_name_key;
+CREATE UNIQUE INDEX IF NOT EXISTS uk_position_department_name ON position_table(department_id, name);
 
 CREATE TABLE IF NOT EXISTS employee (
   id VARCHAR(40) PRIMARY KEY,
@@ -31,6 +35,13 @@ CREATE TABLE IF NOT EXISTS employee (
 CREATE INDEX IF NOT EXISTS idx_employee_department ON employee(department_id);
 CREATE INDEX IF NOT EXISTS idx_employee_no ON employee(employee_no);
 CREATE INDEX IF NOT EXISTS idx_employee_status ON employee(status);
+UPDATE position_table p
+SET department_id = (
+  SELECT e.department_id FROM employee e WHERE e.position_id = p.id LIMIT 1
+)
+WHERE p.department_id IS NULL AND EXISTS (
+  SELECT 1 FROM employee e WHERE e.position_id = p.id
+);
 
 CREATE TABLE IF NOT EXISTS phone_number (
   id VARCHAR(40) PRIMARY KEY,

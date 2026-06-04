@@ -13,6 +13,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.web.multipart.MultipartFile;
 
 public interface RegistryService {
 
@@ -43,6 +44,14 @@ public interface RegistryService {
   Department saveDepartment(ArchiveRequest request);
 
   Position savePosition(ArchiveRequest request);
+
+  ImportResult importDepartmentsAndPositions(MultipartFile file);
+
+  ImportResult importEmployees(MultipartFile file);
+
+  byte[] departmentPositionImportTemplate();
+
+  byte[] employeeImportTemplate();
 
   Employee openAccount(OpenAccountRequest request);
 
@@ -113,7 +122,16 @@ public interface RegistryService {
   ) {
   }
 
-  record ArchiveRequest(String id, @NotBlank String name) {
+  record ArchiveRequest(String id, @NotBlank String name, String departmentId) {
+  }
+
+  record ImportResult(
+      int totalRows,
+      int successRows,
+      int createdRows,
+      int skippedRows,
+      List<String> errors
+  ) {
   }
 
   record OpenAccountRequest(
