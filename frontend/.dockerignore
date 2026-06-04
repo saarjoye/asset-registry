@@ -1,0 +1,17 @@
+# 前端构建 context (./frontend) 专用忽略清单。
+# 必须存在：frontend/Dockerfile 使用 COPY . .，根目录 .dockerignore 对本 context 不生效。
+# 避免把宿主机（Windows）的依赖与产物复制进 Linux 构建镜像。
+node_modules
+dist
+.vite
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.git
+.gitignore
+Dockerfile
+.dockerignore

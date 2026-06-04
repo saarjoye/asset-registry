@@ -1,0 +1,20 @@
+# 忽略根目录 node_modules / dist
+node_modules/
+dist/
+.vite/
+
+# 后端产物
+backend/target/
+backend/data/
+backend/backend-dev*.log
+
+# 日志
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db

@@ -1,0 +1,62 @@
+# Java / Maven
+backend/target/
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+backend/*.class
+backend/hs_err_pid*.log
+backend/replay_pid*.log
+
+# Spring Boot runtime
+backend/data/
+backend/logs/
+backend/*.log
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/*.log
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/pnpm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+*.env
+*.pem
+*.key
+*.p12
+keystore.*
+secrets.*
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# Internal project artefacts that are not part of the public release
+agent.md
+generate_style_images.py
+*.pen
+工作设备登记系统优化设计方案.md
+工作设备登记系统演示稿.html
+样式稿图片/
+mcp严格需求版导出/
+mcp演示稿导出/
+mcp白紫严格版导出/
+mcp白紫姓名显示版导出/
+mcp白紫手机号运营商版导出/
+mcp白紫移动退出版导出/
+
+# Build artefacts
+*.jar
+!backend/Dockerfile
+!frontend/Dockerfile
