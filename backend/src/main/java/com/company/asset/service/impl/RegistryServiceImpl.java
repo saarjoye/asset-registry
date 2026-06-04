@@ -344,7 +344,9 @@ public class RegistryServiceImpl implements RegistryService {
     }
     if ("supervisor".equals(viewer.getRoleCode())) {
       return employeeMapper.selectList(null).stream()
-          .filter(e -> Objects.equals(e.getId(), viewer.getId()) || matchesSupervisorScope(viewer.getId(), e))
+          .filter(e -> Objects.equals(e.getId(), viewer.getId())
+              || matchesSupervisorScope(viewer.getId(), e)
+              || Boolean.TRUE.equals(e.getRecycleReceiver()))
           .toList();
     }
     return employeeMapper.selectList(null).stream()
