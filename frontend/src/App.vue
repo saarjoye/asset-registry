@@ -152,6 +152,7 @@ const summaryValues = reactive<Record<FilterKey, string>>({
   model: ""
 });
 const preciseQuery = ref("");
+const personSearchQuery = ref("");
 
 const personForm = reactive({
   id: "",
@@ -558,6 +559,23 @@ const supervisorScopesForSelected = computed(() => {
     return [];
   }
   return state.supervisorScopes.filter((scope) => scope.supervisorId === dataPermissionForm.supervisorId);
+});
+
+const filteredEmployees = computed(() => {
+  const query = personSearchQuery.value.trim().toLowerCase();
+  if (!query) {
+    return state.employees;
+  }
+
+  return state.employees.filter((employee) => {
+    return [
+      employee.employeeNo,
+      employee.name,
+      employee.account,
+      getDepartmentName(employee.departmentId),
+      getPositionName(employee.positionId)
+    ].some((value) => value.toLowerCase().includes(query));
+  });
 });
 
 const summaryScopeEmployees = computed(() => {
@@ -2152,7 +2170,15 @@ async function submitStockIn() {
             </form>
 
             <section class="table-panel compact-table-panel">
-              <div class="section-title">人员列表</div>
+              <div class="table-toolbar">
+                <div class="section-title">人员列表</div>
+                <label class="inline-search">
+                  <span>查询</span>
+                  <input v-model="personSearchQuery" placeholder="输入姓名、人员编号、账号、科室或岗位" />
+                </label>
+                <button v-if="personSearchQuery" class="ghost-btn" type="button" @click="personSearchQuery = ''">清空</button>
+                <span class="form-help">共 {{ filteredEmployees.length }} / {{ state.employees.length }} 人</span>
+              </div>
               <table>
                 <thead>
                   <tr>
@@ -2170,7 +2196,7 @@ async function submitStockIn() {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="employee in state.employees" :key="employee.id">
+                  <tr v-for="employee in filteredEmployees" :key="employee.id">
                     <td>{{ employee.employeeNo }}</td>
                     <td>{{ employee.name }}</td>
                     <td>{{ employee.gender }}</td>
@@ -2186,6 +2212,9 @@ async function submitStockIn() {
                     <td>
                       <button class="small-btn" type="button" @click="editPerson(employee)">修改</button>
                     </td>
+                  </tr>
+                  <tr v-if="!filteredEmployees.length">
+                    <td :colspan="activePage === 'peopleAdmin' ? 11 : 9">未找到匹配人员</td>
                   </tr>
                 </tbody>
               </table>

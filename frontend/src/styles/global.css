@@ -290,6 +290,22 @@ select:focus {
   margin-bottom: 14px;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.table-toolbar .section-title {
+  margin: 0;
+}
+
+.inline-search {
+  width: min(460px, 100%);
+}
+
 table {
   width: 100%;
   min-width: 720px;
