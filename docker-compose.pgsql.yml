@@ -7,14 +7,14 @@ services:
     restart: unless-stopped
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      DB_HOST: ${DB_HOST:?set PostgreSQL host in host environment}
-      DB_PORT: ${DB_PORT:-5432}
-      DB_NAME: ${DB_NAME:-work_device_registry}
-      DB_USERNAME: ${DB_USERNAME:?set PostgreSQL username in host environment}
-      DB_PASSWORD: ${DB_PASSWORD:?set PostgreSQL password in host environment}
+      DB_HOST: "replace-with-your-postgres-host"
+      DB_PORT: "5432"
+      DB_NAME: "work_device_registry"
+      DB_USERNAME: "replace-with-your-postgres-user"
+      DB_PASSWORD: "replace-with-your-postgres-password"
       TZ: Asia/Shanghai
     ports:
-      - "${BACKEND_PORT:-8080}:8080"
+      - "8080:8080"
     healthcheck:
       test: ["CMD-SHELL", "curl -fs http://127.0.0.1:8080/api/archive/departments || exit 1"]
       interval: 15s
@@ -32,4 +32,4 @@ services:
       backend:
         condition: service_started
     ports:
-      - "${FRONTEND_PORT:-5173}:80"
+      - "5173:80"

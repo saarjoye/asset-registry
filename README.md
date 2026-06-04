@@ -78,24 +78,12 @@ docker compose down -v
 
 ## PostgreSQL 生产部署（宿主机变量）
 
-数据库连接信息必须在应用启动前存在，不能放到管理后台里后置设置。正式部署时不要写 `.env` 文件，直接使用宿主机、NAS 面板或 CI/CD Secret 注入环境变量。
+数据库连接信息必须在应用启动前存在，不能放到管理后台里后置设置。正式部署时不要写 `.env` 文件，直接在 `docker-compose.pgsql.yml` 中替换 PostgreSQL 地址、账号和密码占位值。
 
 `docker-compose.pgsql.yml` 会直接从公开 GitHub 仓库构建镜像，不依赖 GHCR，不需要 `docker login ghcr.io`：
 
 ```powershell
-$env:DB_HOST="your-postgres-host"
-$env:DB_PORT="5432"
-$env:DB_NAME="work_device_registry"
-$env:DB_USERNAME="your-postgres-user"
-$env:DB_PASSWORD="your-postgres-password"
-docker compose -p asset-registry -f docker-compose.pgsql.yml up -d
-```
-
-可选变量：
-
-```powershell
-$env:BACKEND_PORT="8080"
-$env:FRONTEND_PORT="5173"
+docker compose -p asset-registry -f docker-compose.pgsql.yml up -d --build
 ```
 
 如果 PostgreSQL 在宿主机本机，Docker Desktop 通常可用 `host.docker.internal` 作为 `DB_HOST`；NAS 上建议填 PostgreSQL 所在机器的局域网 IP、容器网络别名或反向代理域名。
@@ -104,17 +92,15 @@ Redis 当前项目尚未使用；如果后续要做登录会话、验证码、�
 
 ## 环境变量
 
-Compose 支持以下宿主机变量；不需要也不推荐提交 `.env` 文件：
+Compose 中需要替换以下占位值；不需要也不推荐提交 `.env` 文件：
 
-| 变量 | 默认值 | 说明 |
+| 配置项 | 示例值 | 说明 |
 |---|---|---|
-| `DB_HOST` | 无，PostgreSQL 模式必填 | PostgreSQL 主机 |
+| `DB_HOST` | `192.168.1.10` | PostgreSQL 主机 |
 | `DB_PORT` | `5432` | PostgreSQL 端口 |
 | `DB_NAME` | `work_device_registry` | 业务库名 |
-| `DB_USERNAME` | 无，PostgreSQL 模式必填 | PostgreSQL 业务账号 |
-| `DB_PASSWORD` | 无，PostgreSQL 模式必填 | PostgreSQL 业务账号密码 |
-| `BACKEND_PORT` | `8080` | 后端端口 |
-| `FRONTEND_PORT` | `5173` | 前端端口 |
+| `DB_USERNAME` | `asset` | PostgreSQL 业务账号 |
+| `DB_PASSWORD` | 强密码 | PostgreSQL 业务账号密码 |
 
 ## 接口
 
