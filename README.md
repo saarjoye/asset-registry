@@ -21,8 +21,7 @@ frontend/                前端 Vue 工程
   Dockerfile             多阶段构建（Node build -> Nginx 静态服务）
   nginx.conf             /api 反向代理到 backend:8080
 docker-compose.yml       backend + frontend + H2 一键测试启动（无需 .env）
-docker-compose.ghcr.yml  GHCR 预构建镜像测试启动（无需 .env）
-docker-compose.pgsql.yml PostgreSQL 生产部署（使用宿主机环境变量）
+docker-compose.pgsql.yml PostgreSQL 生产部署（从公开 GitHub 仓库构建镜像）
 ```
 
 ## 数据库 schema 说明
@@ -77,22 +76,11 @@ docker compose down -v
 
 首次进入前端时创建管理员账号；管理员账号属于系统业务数据，不需要通过 `.env` 配置。
 
-使用 GitHub Container Registry 预构建镜像：
-
-```powershell
-docker compose -f docker-compose.ghcr.yml up -d
-```
-
-如仓库所有者不是 `saarjoye`，先设置镜像所有者变量：
-
-```powershell
-$env:GHCR_OWNER="your-github-username"
-docker compose -f docker-compose.ghcr.yml up -d
-```
-
 ## PostgreSQL 生产部署（宿主机变量）
 
-数据库连接信息必须在应用启动前存在，不能放到管理后台里后置设置。正式部署时不要写 `.env` 文件，直接使用宿主机、NAS 面板或 CI/CD Secret 注入环境变量：
+数据库连接信息必须在应用启动前存在，不能放到管理后台里后置设置。正式部署时不要写 `.env` 文件，直接使用宿主机、NAS 面板或 CI/CD Secret 注入环境变量。
+
+`docker-compose.pgsql.yml` 会直接从公开 GitHub 仓库构建镜像，不依赖 GHCR，不需要 `docker login ghcr.io`：
 
 ```powershell
 $env:DB_HOST="your-postgres-host"
@@ -108,7 +96,6 @@ docker compose -p asset-registry -f docker-compose.pgsql.yml up -d
 ```powershell
 $env:BACKEND_PORT="8080"
 $env:FRONTEND_PORT="5173"
-$env:GHCR_OWNER="saarjoye"
 ```
 
 如果 PostgreSQL 在宿主机本机，Docker Desktop 通常可用 `host.docker.internal` 作为 `DB_HOST`；NAS 上建议填 PostgreSQL 所在机器的局域网 IP、容器网络别名或反向代理域名。
@@ -128,7 +115,6 @@ Compose 支持以下宿主机变量；不需要也不推荐提交 `.env` 文件�
 | `DB_PASSWORD` | 无，PostgreSQL 模式必填 | PostgreSQL 业务账号密码 |
 | `BACKEND_PORT` | `8080` | 后端端口 |
 | `FRONTEND_PORT` | `5173` | 前端端口 |
-| `GHCR_OWNER` | `saarjoye` | GHCR 镜像所有者 |
 
 ## 接口
 
