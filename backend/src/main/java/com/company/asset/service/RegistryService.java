@@ -33,6 +33,8 @@ public interface RegistryService {
 
   List<Employee> employees(String viewerId);
 
+  List<Employee> recycleReceivers();
+
   List<PhoneNumber> phones(String viewerId);
 
   List<DeviceAsset> devices(String viewerId);

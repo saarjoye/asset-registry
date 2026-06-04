@@ -37,7 +37,6 @@ CREATE TABLE IF NOT EXISTS employee (
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 ALTER TABLE employee ADD COLUMN IF NOT EXISTS recycle_receiver BOOLEAN NOT NULL DEFAULT FALSE;
-UPDATE employee SET recycle_receiver = TRUE WHERE role_code = 'admin';
 CREATE INDEX IF NOT EXISTS idx_employee_department ON employee(department_id);
 CREATE INDEX IF NOT EXISTS idx_employee_no ON employee(employee_no);
 CREATE INDEX IF NOT EXISTS idx_employee_status ON employee(status);

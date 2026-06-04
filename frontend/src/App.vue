@@ -42,6 +42,7 @@ interface AppState {
   devices: Device[];
   accounts: ChannelAccount[];
   handoverTasks: HandoverTask[];
+  recycleReceivers: Employee[];
   supervisorScopes: SupervisorDataScope[];
 }
 
@@ -104,7 +105,7 @@ const filterFields: Array<{ key: FilterKey; label: string }> = [
 ];
 
 function emptyState(): AppState {
-  return { departments: [], positions: [], employees: [], phones: [], devices: [], accounts: [], handoverTasks: [], supervisorScopes: [] };
+  return { departments: [], positions: [], employees: [], phones: [], devices: [], accounts: [], handoverTasks: [], recycleReceivers: [], supervisorScopes: [] };
 }
 
 const state = reactive<AppState>(emptyState());
@@ -215,6 +216,9 @@ async function refresh(viewerId = currentUserId.value) {
     ]);
     const viewer = normalizedViewerId ? employees.find((employee) => employee.id === normalizedViewerId) : null;
     const supervisorScopes = viewer?.roleCode === "admin" ? await api.permissions.supervisorScopes() : [];
+    const recycleReceivers = viewer && ["admin", "supervisor", "hr"].includes(viewer.roleCode)
+      ? await api.archive.recycleReceivers()
+      : [];
     state.employees = employees.map(adaptEmployee);
     state.departments = departments;
     state.positions = positions;
@@ -222,6 +226,7 @@ async function refresh(viewerId = currentUserId.value) {
     state.accounts = accounts.map(adaptAccount);
     state.phones = phones.map(adaptPhone);
     state.handoverTasks = handoverTasks;
+    state.recycleReceivers = recycleReceivers.map(adaptEmployee);
     state.supervisorScopes = supervisorScopes;
     dataError.value = "";
   } catch (e) {
@@ -472,10 +477,6 @@ const approvalReceiverEmployees = computed(() => {
       return false;
     }
 
-    if (approvalForm.targetType === "回收入库") {
-      return employee.recycleReceiver;
-    }
-
     if (approvalForm.targetType === "本部门员工") {
       return employee.departmentId === currentUser.value?.departmentId;
     }
@@ -486,6 +487,22 @@ const approvalReceiverEmployees = computed(() => {
 
     return true;
   });
+});
+
+const approvalRecycleReceivers = computed(() => {
+  const task = selectedApprovalTask.value;
+  if (!task) {
+    return [];
+  }
+  return state.recycleReceivers.filter((employee) => {
+    return employee.id !== task.applicantId && employee.status === "在职";
+  });
+});
+
+const approvalReceiverOptions = computed(() => {
+  return approvalForm.targetType === "回收入库"
+    ? approvalRecycleReceivers.value
+    : approvalReceiverEmployees.value;
 });
 
 const receiverPendingTasks = computed(() => {
@@ -722,7 +739,7 @@ watch(
   () => approvalForm.targetType,
   () => {
     approvalForm.receiverEmployeeId = approvalForm.targetType === "回收入库"
-      ? approvalReceiverEmployees.value[0]?.id ?? ""
+      ? approvalReceiverOptions.value[0]?.id ?? ""
       : "";
   }
 );
@@ -731,7 +748,16 @@ watch(
   () => approvalForm.taskId,
   () => {
     if (approvalForm.targetType === "回收入库") {
-      approvalForm.receiverEmployeeId = approvalReceiverEmployees.value[0]?.id ?? "";
+      approvalForm.receiverEmployeeId = approvalReceiverOptions.value[0]?.id ?? "";
+    }
+  }
+);
+
+watch(
+  approvalReceiverOptions,
+  (options) => {
+    if (approvalForm.targetType === "回收入库" && !options.some((employee) => employee.id === approvalForm.receiverEmployeeId)) {
+      approvalForm.receiverEmployeeId = options[0]?.id ?? "";
     }
   }
 );
@@ -1972,12 +1998,12 @@ async function submitStockIn() {
                 <span>接收人</span>
                 <select v-model="approvalForm.receiverEmployeeId" required>
                   <option value="" disabled>请选择</option>
-                  <option v-for="employee in approvalReceiverEmployees" :key="employee.id" :value="employee.id">
+                  <option v-for="employee in approvalReceiverOptions" :key="employee.id" :value="employee.id">
                     {{ employeeDisplay(employee) }}
                   </option>
                 </select>
               </label>
-              <p v-if="approvalForm.targetType === '回收入库' && !approvalReceiverEmployees.length" class="form-help">
+              <p v-if="approvalForm.targetType === '回收入库' && !approvalReceiverOptions.length" class="form-help">
                 请先在人员档案中把接收人标记为“回收接收人”。
               </p>
               <button class="primary-btn" type="submit">同意</button>

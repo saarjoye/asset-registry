@@ -45,6 +45,11 @@ public class ArchiveController {
     return registryService.employees(employeeId);
   }
 
+  @GetMapping("/recycle-receivers")
+  public List<Employee> recycleReceivers() {
+    return registryService.recycleReceivers();
+  }
+
   @PostMapping("/employees")
   public Employee saveEmployee(
       @RequestParam(defaultValue = "false") boolean includeAccount,

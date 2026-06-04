@@ -199,6 +199,7 @@ export const api = {
   },
   archive: {
     employees: () => request<Employee[]>("/archive/employees"),
+    recycleReceivers: () => request<Employee[]>("/archive/recycle-receivers"),
     saveEmployee(payload: Record<string, unknown>, includeAccount: boolean) {
       const qs = includeAccount ? "?includeAccount=true" : "";
       return request<Employee>(`/archive/employees${qs}`, { method: "POST", body: JSON.stringify(payload) });

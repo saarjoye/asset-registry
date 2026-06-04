@@ -169,7 +169,7 @@ public class RegistryServiceImpl implements RegistryService {
     admin.setLoginAccount(request.account());
     admin.setLoginPasswordHash("{noop}" + request.password());
     admin.setRoleCode("admin");
-    admin.setRecycleReceiver(true);
+    admin.setRecycleReceiver(false);
     admin.setCreatedAt(now());
     admin.setUpdatedAt(now());
     employeeMapper.insert(admin);
@@ -221,6 +221,14 @@ public class RegistryServiceImpl implements RegistryService {
     }
     Employee viewer = requireEmployee(viewerId);
     return visibleEmployeesForArchive(viewer);
+  }
+
+  @Override
+  public List<Employee> recycleReceivers() {
+    return employeeMapper.selectList(null).stream()
+        .filter(e -> "在职".equals(e.getStatus()))
+        .filter(e -> Boolean.TRUE.equals(e.getRecycleReceiver()))
+        .toList();
   }
 
   @Override
@@ -680,9 +688,6 @@ public class RegistryServiceImpl implements RegistryService {
     e.setLoginAccount(request.account());
     e.setLoginPasswordHash("{noop}" + request.password());
     e.setRoleCode(request.role());
-    if ("admin".equals(request.role()) && e.getRecycleReceiver() == null) {
-      e.setRecycleReceiver(true);
-    }
     e.setUpdatedAt(now());
     employeeMapper.updateById(e);
     return e;
