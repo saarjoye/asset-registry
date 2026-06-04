@@ -21,7 +21,7 @@ frontend/                前端 Vue 工程
   Dockerfile             多阶段构建（Node build -> Nginx 静态服务）
   nginx.conf             /api 反向代理到 backend:8080
 docker-compose.yml       backend + frontend + H2 一键测试启动（无需 .env）
-docker-compose.pgsql.yml PostgreSQL 生产部署（从公开 GitHub 仓库构建镜像）
+docker-compose.pgsql.yml PostgreSQL 生产部署（使用公开预构建镜像）
 ```
 
 ## 数据库 schema 说明
@@ -80,7 +80,7 @@ docker compose down -v
 
 数据库连接信息必须在应用启动前存在，不能放到管理后台里后置设置。正式部署时不要写 `.env` 文件，直接在 `docker-compose.pgsql.yml` 中替换 PostgreSQL 地址、账号和密码占位值。
 
-`docker-compose.pgsql.yml` 会直接从公开 GitHub 仓库构建镜像，不依赖 GHCR，不需要 `docker login ghcr.io`：
+`docker-compose.pgsql.yml` 使用公开预构建镜像，不需要在 NAS 上构建，也不需要拉取 Maven / Node 基础镜像：
 
 ```powershell
 docker compose -p asset-registry -f docker-compose.pgsql.yml up -d --build

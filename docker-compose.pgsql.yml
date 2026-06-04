@@ -1,8 +1,6 @@
 services:
   backend:
-    image: asset-registry-backend:latest
-    build:
-      context: https://github.com/saarjoye/asset-registry.git#main:backend
+    image: ghcr.io/saarjoye/asset-registry-public-backend:latest
     container_name: work-asset-backend
     restart: unless-stopped
     environment:
@@ -23,9 +21,7 @@ services:
       start_period: 40s
 
   frontend:
-    image: asset-registry-frontend:latest
-    build:
-      context: https://github.com/saarjoye/asset-registry.git#main:frontend
+    image: ghcr.io/saarjoye/asset-registry-public-frontend:latest
     container_name: work-asset-frontend
     restart: unless-stopped
     depends_on:
