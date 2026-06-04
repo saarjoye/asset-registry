@@ -32,12 +32,16 @@ CREATE TABLE IF NOT EXISTS employee (
   login_account VARCHAR(80) UNIQUE,
   login_password_hash VARCHAR(255),
   role_code VARCHAR(40) NOT NULL DEFAULT 'employee',
+  recycle_receiver BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+ALTER TABLE employee ADD COLUMN IF NOT EXISTS recycle_receiver BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE employee SET recycle_receiver = TRUE WHERE role_code = 'admin';
 CREATE INDEX IF NOT EXISTS idx_employee_department ON employee(department_id);
 CREATE INDEX IF NOT EXISTS idx_employee_no ON employee(employee_no);
 CREATE INDEX IF NOT EXISTS idx_employee_status ON employee(status);
+CREATE INDEX IF NOT EXISTS idx_employee_recycle_receiver ON employee(recycle_receiver);
 
 CREATE TABLE IF NOT EXISTS supervisor_data_scope (
   id VARCHAR(40) PRIMARY KEY,

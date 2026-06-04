@@ -166,7 +166,8 @@ const personForm = reactive({
   status: "在职" as EmployeeStatus,
   account: "",
   loginPassword: "",
-  role: "employee" as Role
+  role: "employee" as Role,
+  recycleReceiver: false
 });
 
 const deptForm = reactive({ id: "", name: "" });
@@ -471,6 +472,10 @@ const approvalReceiverEmployees = computed(() => {
       return false;
     }
 
+    if (approvalForm.targetType === "回收入库") {
+      return employee.recycleReceiver;
+    }
+
     if (approvalForm.targetType === "本部门员工") {
       return employee.departmentId === currentUser.value?.departmentId;
     }
@@ -716,7 +721,18 @@ watch(
 watch(
   () => approvalForm.targetType,
   () => {
-    approvalForm.receiverEmployeeId = "";
+    approvalForm.receiverEmployeeId = approvalForm.targetType === "回收入库"
+      ? approvalReceiverEmployees.value[0]?.id ?? ""
+      : "";
+  }
+);
+
+watch(
+  () => approvalForm.taskId,
+  () => {
+    if (approvalForm.targetType === "回收入库") {
+      approvalForm.receiverEmployeeId = approvalReceiverEmployees.value[0]?.id ?? "";
+    }
   }
 );
 
@@ -918,12 +934,18 @@ function getDeviceAllocationTime(deviceId: string) {
 
 function getDeviceSourceDepartmentName(deviceId: string) {
   const task = getCompletedHandoverTask(deviceId);
-  return task ? getDepartmentName(task.sourceDepartmentId) : "";
+  if (task) {
+    return getDepartmentName(task.sourceDepartmentId);
+  }
+  const device = state.devices.find((item) => item.id === deviceId);
+  const owner = device ? getEmployee(device.employeeId) : undefined;
+  return owner ? getDepartmentName(owner.departmentId) : device ? getDepartmentName(device.departmentId) : "";
 }
 
 function getDeviceSourceEmployeeName(deviceId: string) {
   const task = getCompletedHandoverTask(deviceId);
-  const applicant = task ? getEmployee(task.applicantId) : undefined;
+  const device = state.devices.find((item) => item.id === deviceId);
+  const applicant = task ? getEmployee(task.applicantId) : device ? getEmployee(device.employeeId) : undefined;
   return applicant ? `${applicant.name} / ${applicant.employeeNo}` : "";
 }
 
@@ -1327,6 +1349,7 @@ function editPerson(employee: Employee) {
   personForm.account = employee.account;
   personForm.loginPassword = "";
   personForm.role = employee.role;
+  personForm.recycleReceiver = employee.recycleReceiver;
 }
 
 function resetPersonForm() {
@@ -1342,6 +1365,7 @@ function resetPersonForm() {
   personForm.account = "";
   personForm.loginPassword = "";
   personForm.role = "employee";
+  personForm.recycleReceiver = false;
 }
 
 function cancelPersonEdit() {
@@ -1368,6 +1392,7 @@ async function submitPerson(includeAccount: boolean) {
         account: personForm.account.trim(),
         password: includeAccount && personForm.loginPassword ? personForm.loginPassword : null,
         role: includeAccount ? personForm.role : "employee",
+        recycleReceiver: personForm.recycleReceiver,
         operatorEmployeeId: currentUser.value?.id ?? null
       },
       includeAccount
@@ -1952,6 +1977,9 @@ async function submitStockIn() {
                   </option>
                 </select>
               </label>
+              <p v-if="approvalForm.targetType === '回收入库' && !approvalReceiverEmployees.length" class="form-help">
+                请先在人员档案中把接收人标记为“回收接收人”。
+              </p>
               <button class="primary-btn" type="submit">同意</button>
             </form>
 
@@ -2143,6 +2171,11 @@ async function submitStockIn() {
                   <option v-for="status in employeeStatuses" :key="status" :value="status">{{ status }}</option>
                 </select>
               </label>
+              <label class="check-item">
+                <input v-model="personForm.recycleReceiver" type="checkbox" />
+                <span>回收接收人</span>
+              </label>
+              <p class="form-help">标记后，离职审批选择“回收入库”时可作为接收人。</p>
               <template v-if="activePage === 'peopleAdmin'">
                 <label>
                   <span>账号</span>
@@ -2190,6 +2223,7 @@ async function submitStockIn() {
                     <th>岗位</th>
                     <th>入职时间</th>
                     <th>状态</th>
+                    <th>回收接收</th>
                     <th v-if="activePage === 'peopleAdmin'">账号</th>
                     <th v-if="activePage === 'peopleAdmin'">密码</th>
                     <th>操作</th>
@@ -2207,6 +2241,7 @@ async function submitStockIn() {
                     <td>
                       <span class="status-tag">{{ employee.status }}</span>
                     </td>
+                    <td>{{ employee.recycleReceiver ? "是" : "否" }}</td>
                     <td v-if="activePage === 'peopleAdmin'">{{ employee.account }}</td>
                     <td v-if="activePage === 'peopleAdmin'">******</td>
                     <td>
@@ -2214,7 +2249,7 @@ async function submitStockIn() {
                     </td>
                   </tr>
                   <tr v-if="!filteredEmployees.length">
-                    <td :colspan="activePage === 'peopleAdmin' ? 11 : 9">未找到匹配人员</td>
+                    <td :colspan="activePage === 'peopleAdmin' ? 12 : 10">未找到匹配人员</td>
                   </tr>
                 </tbody>
               </table>

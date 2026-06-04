@@ -169,6 +169,7 @@ public class RegistryServiceImpl implements RegistryService {
     admin.setLoginAccount(request.account());
     admin.setLoginPasswordHash("{noop}" + request.password());
     admin.setRoleCode("admin");
+    admin.setRecycleReceiver(true);
     admin.setCreatedAt(now());
     admin.setUpdatedAt(now());
     employeeMapper.insert(admin);
@@ -369,6 +370,10 @@ public class RegistryServiceImpl implements RegistryService {
     if (target == null) {
       return false;
     }
+    Employee supervisor = employeeMapper.selectById(supervisorId);
+    if (supervisor != null && Objects.equals(supervisor.getDepartmentId(), target.getDepartmentId())) {
+      return true;
+    }
     return supervisorDataScopes(supervisorId).stream().anyMatch(scope ->
         Objects.equals(scope.getDepartmentId(), target.getDepartmentId())
             && (Boolean.TRUE.equals(scope.getAllPositions())
@@ -377,6 +382,10 @@ public class RegistryServiceImpl implements RegistryService {
   }
 
   private boolean departmentAllowedForSupervisor(String supervisorId, String departmentId) {
+    Employee supervisor = employeeMapper.selectById(supervisorId);
+    if (supervisor != null && Objects.equals(supervisor.getDepartmentId(), departmentId)) {
+      return true;
+    }
     return supervisorDataScopes(supervisorId).stream()
         .anyMatch(scope -> Objects.equals(scope.getDepartmentId(), departmentId));
   }
@@ -485,6 +494,7 @@ public class RegistryServiceImpl implements RegistryService {
       created.setPositionId(request.positionId());
       created.setHireDate(request.hireDate());
       created.setStatus(request.status());
+      created.setRecycleReceiver(Boolean.TRUE.equals(request.recycleReceiver()));
       if (includeAccount) {
         created.setLoginAccount(request.account());
         created.setLoginPasswordHash("{noop}" + (request.password() == null || request.password().isBlank() ? "123456" : request.password()));
@@ -508,6 +518,7 @@ public class RegistryServiceImpl implements RegistryService {
     current.setPositionId(request.positionId());
     current.setHireDate(request.hireDate());
     current.setStatus(request.status());
+    current.setRecycleReceiver(Boolean.TRUE.equals(request.recycleReceiver()));
     if (includeAccount) {
       current.setLoginAccount(request.account());
       if (request.password() != null && !request.password().isBlank()) {
@@ -667,6 +678,9 @@ public class RegistryServiceImpl implements RegistryService {
     e.setLoginAccount(request.account());
     e.setLoginPasswordHash("{noop}" + request.password());
     e.setRoleCode(request.role());
+    if ("admin".equals(request.role()) && e.getRecycleReceiver() == null) {
+      e.setRecycleReceiver(true);
+    }
     e.setUpdatedAt(now());
     employeeMapper.updateById(e);
     return e;
@@ -770,6 +784,9 @@ public class RegistryServiceImpl implements RegistryService {
     if ("其它部门员工".equals(request.targetType())
         && Objects.equals(receiver.getDepartmentId(), supervisor.getDepartmentId())) {
       throw new IllegalArgumentException("receiver must be another department");
+    }
+    if ("回收入库".equals(request.targetType()) && !Boolean.TRUE.equals(receiver.getRecycleReceiver())) {
+      throw new IllegalArgumentException("receiver is not recycle receiver");
     }
 
     task.setTargetType(request.targetType());
@@ -917,8 +934,8 @@ public class RegistryServiceImpl implements RegistryService {
               d,
               owner == null ? "" : owner.getEmployeeNo(),
               owner == null ? "库房" : owner.getName(),
-              sourceTask == null ? "" : departmentName(sourceTask.getSourceDepartmentId()),
-              sourceEmployee == null ? "" : sourceEmployee.getName() + " / " + sourceEmployee.getEmployeeNo(),
+              sourceTask == null ? registeredSourceDepartment(d, owner) : departmentName(sourceTask.getSourceDepartmentId()),
+              sourceTask == null ? registeredSourceEmployee(owner) : sourceEmployee == null ? "" : sourceEmployee.getName() + " / " + sourceEmployee.getEmployeeNo(),
               acquisitionType(sourceTask),
               receiveTask == null ? "" : receiveTask.getUpdatedAt() == null ? "" : receiveTask.getUpdatedAt().toString().substring(0, 10),
               allocationTask == null ? "" : allocationTask.getUpdatedAt() == null ? "" : allocationTask.getUpdatedAt().toString().substring(0, 10),
@@ -1188,6 +1205,17 @@ public class RegistryServiceImpl implements RegistryService {
     return d == null ? "" : d.getName();
   }
 
+  private String registeredSourceDepartment(DeviceAsset device, Employee owner) {
+    if (owner != null) {
+      return departmentName(owner.getDepartmentId());
+    }
+    return device == null ? "" : departmentName(device.getDepartmentId());
+  }
+
+  private String registeredSourceEmployee(Employee owner) {
+    return owner == null ? "" : owner.getName() + " / " + owner.getEmployeeNo();
+  }
+
   private void writeHeader(Sheet sheet, String... headers) {
     Row row = sheet.createRow(0);
     for (int i = 0; i < headers.length; i++) {
@@ -1317,6 +1345,7 @@ public class RegistryServiceImpl implements RegistryService {
         employee.setLoginAccount(account);
         employee.setLoginPasswordHash("{noop}123456");
         employee.setRoleCode("employee");
+        employee.setRecycleReceiver(false);
         employee.setCreatedAt(now());
         employee.setUpdatedAt(now());
         employeeMapper.insert(employee);

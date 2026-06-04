@@ -92,6 +92,7 @@ export interface Employee {
   status: EmployeeStatus;
   loginAccount: string;
   roleCode: Role;
+  recycleReceiver: boolean;
   createdAt: string;
   updatedAt: string;
 }

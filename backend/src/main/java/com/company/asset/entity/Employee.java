@@ -25,6 +25,7 @@ public class Employee {
   @TableField("login_password_hash")
   private String loginPasswordHash;
   private String roleCode;
+  private Boolean recycleReceiver;
   private LocalDateTime createdAt;
   private LocalDateTime updatedAt;
 
@@ -52,6 +53,8 @@ public class Employee {
   public void setLoginPasswordHash(String v) { this.loginPasswordHash = v; }
   public String getRoleCode() { return roleCode; }
   public void setRoleCode(String v) { this.roleCode = v; }
+  public Boolean getRecycleReceiver() { return recycleReceiver; }
+  public void setRecycleReceiver(Boolean v) { this.recycleReceiver = v; }
   public LocalDateTime getCreatedAt() { return createdAt; }
   public void setCreatedAt(LocalDateTime v) { this.createdAt = v; }
   public LocalDateTime getUpdatedAt() { return updatedAt; }

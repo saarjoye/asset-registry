@@ -27,6 +27,7 @@ export interface Employee {
   account: string;
   loginPassword: string;
   role: Role;
+  recycleReceiver: boolean;
 }
 
 export interface PhoneNumber {
@@ -82,7 +83,8 @@ export function adaptEmployee(e: EmployeeBackend): Employee {
     status: (e.status as EmployeeStatus) ?? "在职",
     account: e.loginAccount,
     loginPassword: "",
-    role: (e.roleCode as Role) ?? "employee"
+    role: (e.roleCode as Role) ?? "employee",
+    recycleReceiver: Boolean(e.recycleReceiver)
   };
 }
 

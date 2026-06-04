@@ -64,6 +64,7 @@ public class ArchiveController {
         request.account(),
         request.password(),
         request.role(),
+        request.recycleReceiver(),
         employeeId
     ), includeAccount);
   }

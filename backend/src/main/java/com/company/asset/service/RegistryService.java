@@ -134,6 +134,7 @@ public interface RegistryService {
       String account,
       String password,
       String role,
+      Boolean recycleReceiver,
       String operatorEmployeeId
   ) {
   }
