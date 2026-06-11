@@ -301,12 +301,51 @@ const activeMenuItem = computed(() => {
 });
 
 const pageTitle = computed(() => {
-  if (!currentUser.value || !activeMenuItem.value) {
+  if (!activeMenuItem.value) {
     return "";
   }
 
-  return `${currentUser.value.name} - ${activeMenuItem.value.label}`;
+  return activeMenuItem.value.label;
 });
+
+function menuIconPaths(key: string) {
+  switch (key) {
+    case "device":
+      return ["M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z", "M12 18h.01"];
+    case "account":
+    case "openAccount":
+      return ["M15 7a4 4 0 1 1-2.9 3.85L9 14H6v3H3v3h3.5L13.15 13.35A4 4 0 0 1 15 7Z"];
+    case "summary":
+    case "deptSummary":
+    case "allSummary":
+      return ["M12 2 3 7l9 5 9-5-9-5Z", "m3 12 9 5 9-5", "m3 17 9 5 9-5"];
+    case "resignation":
+    case "handoverApprove":
+      return ["M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4", "M16 17l5-5-5-5", "M21 12H9"];
+    case "receiveConfirm":
+    case "recyclePending":
+    case "recycleConfirm":
+    case "stockIn":
+      return ["M22 12h-6l-2 3h-4l-2-3H2", "M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11Z"];
+    case "people":
+    case "peopleAdmin":
+      return ["M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2", "M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z", "M22 21v-2a4 4 0 0 0-3-3.87", "M16 3.13a4 4 0 0 1 0 7.75"];
+    case "departments":
+    case "deptPosition":
+      return ["M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18", "M6 12H4a2 2 0 0 0-2 2v8", "M18 9h2a2 2 0 0 1 2 2v11", "M10 6h4", "M10 10h4", "M10 14h4", "M10 18h4"];
+    case "positions":
+      return ["M10 6V5a2 2 0 0 1 2-2h0a2 2 0 0 1 2 2v1", "M3 7h18v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z", "M3 13h18"];
+    case "archiveImport":
+      return ["M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4", "M17 8l-5-5-5 5", "M12 3v12"];
+    case "dataPermission":
+      return ["M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z", "m9 12 2 2 4-4"];
+    case "deviceAllocation":
+    case "transfer":
+      return ["M22 2 11 13", "m22 2-7 20-4-9-9-4 20-7Z"];
+    default:
+      return ["M12 5v14", "M5 12h14"];
+  }
+}
 
 const currentDepartmentName = computed(() => {
   if (!currentUser.value) {
@@ -1621,87 +1660,87 @@ async function submitStockIn() {
 <template>
   <main class="app-shell">
     <section v-if="!currentUser && needsInitialSetup" class="login-page">
-      <div class="login-window">
-        <div class="window-chrome" aria-hidden="true">
-          <div class="window-controls">
-            <span class="window-dot is-red"></span>
-            <span class="window-dot is-yellow"></span>
-            <span class="window-dot is-green"></span>
-          </div>
-          <span class="window-title">工作设备登记系统</span>
+      <form class="login-card login-card--setup" @submit.prevent="initializeAdmin">
+        <div class="login-app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M12 3 4.5 7.1v9.8L12 21l7.5-4.1V7.1L12 3Z" />
+            <path d="m4.8 7.3 7.2 4 7.2-4" />
+            <path d="M12 11.3V21" />
+            <path d="m8.4 5.2 7.2 4" />
+          </svg>
         </div>
-        <div class="login-window-body">
-          <aside class="login-rail" aria-hidden="true">
-            <div class="login-brand">
-              <span class="login-brand-icon"></span>
-              <span>工作设备登记系统</span>
-            </div>
-          </aside>
-          <form class="login-card" @submit.prevent="initializeAdmin">
-            <h1>工作设备登记系统</h1>
-            <label>
-              <span>姓名</span>
-              <input v-model="setupForm.name" required />
-            </label>
-            <label>
-              <span>账号</span>
-              <input v-model="setupForm.account" autocomplete="username" required />
-            </label>
-            <label>
-              <span>密码</span>
-              <input v-model="setupForm.password" autocomplete="new-password" type="password" required />
-            </label>
-            <label>
-              <span>部门名称</span>
-              <input v-model="setupForm.departmentName" required />
-            </label>
-            <label>
-              <span>岗位名称</span>
-              <input v-model="setupForm.positionName" required />
-            </label>
-            <button class="primary-btn" type="submit">保存</button>
-          </form>
+        <div class="login-title-block">
+          <h1>工作设备登记系统</h1>
+          <p>初始化后继续使用</p>
         </div>
-      </div>
+        <label>
+          <span>姓名</span>
+          <input v-model="setupForm.name" placeholder="请输入姓名" required />
+        </label>
+        <label>
+          <span>账号</span>
+          <input v-model="setupForm.account" autocomplete="username" placeholder="请输入账号" required />
+        </label>
+        <label>
+          <span>密码</span>
+          <input v-model="setupForm.password" autocomplete="new-password" placeholder="••••••••" type="password" required />
+        </label>
+        <label>
+          <span>部门名称</span>
+          <input v-model="setupForm.departmentName" placeholder="请输入部门名称" required />
+        </label>
+        <label>
+          <span>岗位名称</span>
+          <input v-model="setupForm.positionName" placeholder="请输入岗位名称" required />
+        </label>
+        <button class="primary-btn" type="submit">保存</button>
+      </form>
     </section>
 
     <section v-else-if="!currentUser" class="login-page">
-      <div class="login-window">
-        <div class="window-chrome" aria-hidden="true">
-          <div class="window-controls">
-            <span class="window-dot is-red"></span>
-            <span class="window-dot is-yellow"></span>
-            <span class="window-dot is-green"></span>
-          </div>
-          <span class="window-title">工作设备登记系统</span>
+      <form class="login-card" @submit.prevent="login">
+        <div class="login-app-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" role="img">
+            <path d="M12 3 4.5 7.1v9.8L12 21l7.5-4.1V7.1L12 3Z" />
+            <path d="m4.8 7.3 7.2 4 7.2-4" />
+            <path d="M12 11.3V21" />
+            <path d="m8.4 5.2 7.2 4" />
+          </svg>
         </div>
-        <div class="login-window-body">
-          <aside class="login-rail" aria-hidden="true">
-            <div class="login-brand">
-              <span class="login-brand-icon"></span>
-              <span>工作设备登记系统</span>
-            </div>
-          </aside>
-          <form class="login-card" @submit.prevent="login">
-            <h1>工作设备登记系统</h1>
-            <label>
-              <span>账号</span>
-              <input v-model="loginForm.account" autocomplete="username" required />
-            </label>
-            <label>
-              <span>密码</span>
-              <input v-model="loginForm.password" autocomplete="current-password" type="password" required />
-            </label>
-            <button class="primary-btn" type="submit">登录</button>
-            <p v-if="loginError" class="error-text">{{ loginError }}</p>
-          </form>
+        <div class="login-title-block">
+          <h1>工作设备登记系统</h1>
+          <p>登录以继续使用</p>
         </div>
-      </div>
+        <label>
+          <span>账号</span>
+          <input v-model="loginForm.account" autocomplete="username" placeholder="请输入账号" required />
+        </label>
+        <label>
+          <span>密码</span>
+          <input v-model="loginForm.password" autocomplete="current-password" placeholder="••••••••" type="password" required />
+        </label>
+        <button class="primary-btn" type="submit">登录</button>
+        <p v-if="loginError" class="error-text">{{ loginError }}</p>
+      </form>
     </section>
 
     <section v-else class="workspace">
       <aside class="sidebar">
-        <div class="brand">工作设备登记系统</div>
+        <div class="traffic-lights" aria-hidden="true">
+          <span class="traffic-dot is-red"></span>
+          <span class="traffic-dot is-yellow"></span>
+          <span class="traffic-dot is-green"></span>
+        </div>
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 3 4.5 7.1v9.8L12 21l7.5-4.1V7.1L12 3Z" />
+              <path d="m4.8 7.3 7.2 4 7.2-4" />
+              <path d="M12 11.3V21" />
+            </svg>
+          </span>
+          <span>设备登记系统</span>
+        </div>
         <nav>
           <button
             v-for="item in currentMenu"
@@ -1710,7 +1749,10 @@ async function submitStockIn() {
             type="button"
             @click="setPage(item.key)"
           >
-            {{ item.label }}
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path v-for="path in menuIconPaths(item.key)" :key="path" :d="path" />
+            </svg>
+            <span>{{ item.label }}</span>
           </button>
         </nav>
       </aside>
