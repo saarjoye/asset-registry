@@ -1012,6 +1012,20 @@ function employeeDisplay(employee: Employee) {
   return `${employee.name} / ${employee.employeeNo} / ${getDepartmentName(employee.departmentId)} / ${getPositionName(employee.positionId)}`;
 }
 
+function statusTone(status?: string) {
+  const value = status ?? "";
+  if (["在职", "在用", "已完成", "已回收", "已实名"].includes(value)) {
+    return "is-success";
+  }
+  if (["离职申请中", "待回收", "待主管审批", "待接收确认", "接收待确认", "待确认"].includes(value)) {
+    return "is-warning";
+  }
+  if (["已回退", "未实名"].includes(value)) {
+    return "is-danger";
+  }
+  return "is-neutral";
+}
+
 function eventChecked(event: Event) {
   return (event.target as HTMLInputElement).checked;
 }
@@ -1675,6 +1689,11 @@ async function submitStockIn() {
         </header>
 
         <section class="content-grid">
+          <div v-if="dataError" class="error-banner wide-panel" role="alert">
+            <span>{{ dataError }}</span>
+            <button class="error-banner-close" type="button" aria-label="关闭" @click="dataError = ''">×</button>
+          </div>
+
           <form v-if="activePage === 'device'" class="form-panel" @submit.prevent="submitDevice">
             <div class="form-title">登记设备</div>
             <label>
@@ -1778,7 +1797,7 @@ async function submitStockIn() {
                   <td>{{ getDeviceReceiveTime(device.id) }}</td>
                   <td>{{ getDeviceAllocationTime(device.id) }}</td>
                   <td>
-                    <span class="status-tag">{{ device.status }}</span>
+                    <span class="status-tag" :class="statusTone(device.status)">{{ device.status }}</span>
                   </td>
                 </tr>
                 <tr v-if="!currentDevices.length">
@@ -1814,7 +1833,7 @@ async function submitStockIn() {
                   <td>{{ account.idCardNumber }}</td>
                   <td>{{ getPhone(account.phoneId)?.number }}</td>
                   <td>{{ getPhone(account.phoneId)?.operator }}</td>
-                  <td><span class="status-tag">{{ account.status ?? "在用" }}</span></td>
+                  <td><span class="status-tag" :class="statusTone(account.status ?? '在用')">{{ account.status ?? "在用" }}</span></td>
                 </tr>
                 <tr v-if="!currentAccounts.length">
                   <td colspan="9">暂无数据</td>
@@ -1886,7 +1905,7 @@ async function submitStockIn() {
                     <td>{{ row.model }}</td>
                     <td>{{ row.accounts }}</td>
                     <td>
-                      <span class="status-tag">{{ row.status }}</span>
+                      <span class="status-tag" :class="statusTone(row.status)">{{ row.status }}</span>
                     </td>
                   </tr>
                   <tr v-if="!summaryDeviceRows.length">
@@ -1962,8 +1981,8 @@ async function submitStockIn() {
                     <td>{{ row.assetType }}</td>
                     <td>{{ row.assetText }}</td>
                     <td>{{ row.phone }}</td>
-                    <td><span class="status-tag">{{ row.status }}</span></td>
-                    <td><span class="status-tag">{{ row.task?.status ?? "未发起" }}</span></td>
+                    <td><span class="status-tag" :class="statusTone(row.status)">{{ row.status }}</span></td>
+                    <td><span class="status-tag" :class="statusTone(row.task?.status ?? '未发起')">{{ row.task?.status ?? "未发起" }}</span></td>
                     <td>{{ row.task?.rejectReason }}</td>
                   </tr>
                   <tr v-if="!employeeHandoverRows.length">
@@ -2101,7 +2120,7 @@ async function submitStockIn() {
                     <td>{{ asset.assetText }}</td>
                     <td>{{ asset.phone }}</td>
                     <td>{{ asset.registeredAt }}</td>
-                    <td><span class="status-tag">{{ asset.status }}</span></td>
+                    <td><span class="status-tag" :class="statusTone(asset.status)">{{ asset.status }}</span></td>
                   </tr>
                   <tr v-if="!allocationAssets.length">
                     <td colspan="5">暂无数据</td>
@@ -2265,7 +2284,7 @@ async function submitStockIn() {
                     <td>{{ getPositionName(employee.positionId) }}</td>
                     <td>{{ employee.hireDate }}</td>
                     <td>
-                      <span class="status-tag">{{ employee.status }}</span>
+                      <span class="status-tag" :class="statusTone(employee.status)">{{ employee.status }}</span>
                     </td>
                     <td>{{ employee.recycleReceiver ? "是" : "否" }}</td>
                     <td v-if="activePage === 'peopleAdmin'">{{ employee.account }}</td>
@@ -2634,7 +2653,7 @@ async function submitStockIn() {
                   <td>{{ device.recycleInitiatorName }}</td>
                   <td>{{ device.recycleReason }}</td>
                   <td>{{ device.recycleCreatedAt }}</td>
-                  <td><span class="status-tag">{{ device.status }}</span></td>
+                  <td><span class="status-tag" :class="statusTone(device.status)">{{ device.status }}</span></td>
                 </tr>
                 <tr v-if="!pendingRecycleDevices.length">
                   <td colspan="11">暂无数据</td>
@@ -2728,7 +2747,7 @@ async function submitStockIn() {
                     <td>{{ device.type }}</td>
                     <td>{{ device.brand }}</td>
                     <td>{{ device.model }}</td>
-                    <td><span class="status-tag">{{ device.status }}</span></td>
+                    <td><span class="status-tag" :class="statusTone(device.status)">{{ device.status }}</span></td>
                   </tr>
                   <tr v-if="!transferableDevices.length">
                     <td colspan="6">暂无数据</td>
