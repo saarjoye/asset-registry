@@ -1621,46 +1621,82 @@ async function submitStockIn() {
 <template>
   <main class="app-shell">
     <section v-if="!currentUser && needsInitialSetup" class="login-page">
-      <form class="login-card" @submit.prevent="initializeAdmin">
-        <h1>工作设备登记系统</h1>
-        <label>
-          <span>姓名</span>
-          <input v-model="setupForm.name" required />
-        </label>
-        <label>
-          <span>账号</span>
-          <input v-model="setupForm.account" autocomplete="username" required />
-        </label>
-        <label>
-          <span>密码</span>
-          <input v-model="setupForm.password" autocomplete="new-password" type="password" required />
-        </label>
-        <label>
-          <span>部门名称</span>
-          <input v-model="setupForm.departmentName" required />
-        </label>
-        <label>
-          <span>岗位名称</span>
-          <input v-model="setupForm.positionName" required />
-        </label>
-        <button class="primary-btn" type="submit">保存</button>
-      </form>
+      <div class="login-window">
+        <div class="window-chrome" aria-hidden="true">
+          <div class="window-controls">
+            <span class="window-dot is-red"></span>
+            <span class="window-dot is-yellow"></span>
+            <span class="window-dot is-green"></span>
+          </div>
+          <span class="window-title">工作设备登记系统</span>
+        </div>
+        <div class="login-window-body">
+          <aside class="login-rail" aria-hidden="true">
+            <div class="login-brand">
+              <span class="login-brand-icon"></span>
+              <span>工作设备登记系统</span>
+            </div>
+          </aside>
+          <form class="login-card" @submit.prevent="initializeAdmin">
+            <h1>工作设备登记系统</h1>
+            <label>
+              <span>姓名</span>
+              <input v-model="setupForm.name" required />
+            </label>
+            <label>
+              <span>账号</span>
+              <input v-model="setupForm.account" autocomplete="username" required />
+            </label>
+            <label>
+              <span>密码</span>
+              <input v-model="setupForm.password" autocomplete="new-password" type="password" required />
+            </label>
+            <label>
+              <span>部门名称</span>
+              <input v-model="setupForm.departmentName" required />
+            </label>
+            <label>
+              <span>岗位名称</span>
+              <input v-model="setupForm.positionName" required />
+            </label>
+            <button class="primary-btn" type="submit">保存</button>
+          </form>
+        </div>
+      </div>
     </section>
 
     <section v-else-if="!currentUser" class="login-page">
-      <form class="login-card" @submit.prevent="login">
-        <h1>工作设备登记系统</h1>
-        <label>
-          <span>账号</span>
-          <input v-model="loginForm.account" autocomplete="username" required />
-        </label>
-        <label>
-          <span>密码</span>
-          <input v-model="loginForm.password" autocomplete="current-password" type="password" required />
-        </label>
-        <button class="primary-btn" type="submit">登录</button>
-        <p v-if="loginError" class="error-text">{{ loginError }}</p>
-      </form>
+      <div class="login-window">
+        <div class="window-chrome" aria-hidden="true">
+          <div class="window-controls">
+            <span class="window-dot is-red"></span>
+            <span class="window-dot is-yellow"></span>
+            <span class="window-dot is-green"></span>
+          </div>
+          <span class="window-title">工作设备登记系统</span>
+        </div>
+        <div class="login-window-body">
+          <aside class="login-rail" aria-hidden="true">
+            <div class="login-brand">
+              <span class="login-brand-icon"></span>
+              <span>工作设备登记系统</span>
+            </div>
+          </aside>
+          <form class="login-card" @submit.prevent="login">
+            <h1>工作设备登记系统</h1>
+            <label>
+              <span>账号</span>
+              <input v-model="loginForm.account" autocomplete="username" required />
+            </label>
+            <label>
+              <span>密码</span>
+              <input v-model="loginForm.password" autocomplete="current-password" type="password" required />
+            </label>
+            <button class="primary-btn" type="submit">登录</button>
+            <p v-if="loginError" class="error-text">{{ loginError }}</p>
+          </form>
+        </div>
+      </div>
     </section>
 
     <section v-else class="workspace">
